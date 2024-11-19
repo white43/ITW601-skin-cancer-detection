@@ -3,8 +3,9 @@
 ## Installation 
 
 1. `virtualenv venv`
-2. `pip install -r app/requirements.txt`
+2. `source venv/bin/activate`
+3. `pip install -r app/requirements.txt`
 
 ## How to run the app
 
-`python -m app.main --model path-to-model-file.keras`
+`python -m app.main --cls-model path-to-model.keras --seg-model path-to-model.pt`

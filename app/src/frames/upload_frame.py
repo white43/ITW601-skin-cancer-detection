@@ -6,9 +6,14 @@ from threading import Thread
 
 import customtkinter as ctk
 from PIL import Image
-from ..events import Events
-from ..inference import Worker
 from tkinterdnd2 import TkinterDnD, DND_FILES
+
+from ..events import Events
+from ..inference import ClassificationWorker, SegmentationWorker
+
+LESION_TYPE_UNKNOWN = -1
+LESION_TYPE_BENIGN = 0
+LESION_TYPE_MALIGNANT = 1
 
 LESION_CLASSES = {
     -1: "Unknown",
@@ -21,40 +26,71 @@ LESION_CLASSES = {
     6: "Vascular Lesions (VASC)",
 }
 
+LESION_TYPE_DICT = {
+    -1: LESION_TYPE_UNKNOWN,
+    0: LESION_TYPE_MALIGNANT,
+    1: LESION_TYPE_BENIGN,
+    2: LESION_TYPE_MALIGNANT,
+    3: LESION_TYPE_MALIGNANT,
+    4: LESION_TYPE_BENIGN,
+    5: LESION_TYPE_BENIGN,
+    6: LESION_TYPE_BENIGN,
+}
+
+LESION_TYPE_TEXT_DICT = {
+    -1: "unknown",
+    0: "benign",
+    1: "malignant",
+}
+
 
 class UploadFrame(ctk.CTkFrame):
     image_label: ctk.CTkButton | None
     analyze_button: ctk.CTkButton | None
+    show_more_button: ctk.CTkButton | None
     hint_label: ctk.CTkLabel | None
 
     events: Events
-    tasks: Queue[tuple[Image.Image, ctk.CTkButton, ctk.CTkLabel]]
-    results: Queue[int]
+    cls_tasks: Queue[Image.Image]
+    cls_results: Queue[int]
+    seg_tasks: Queue[tuple[Image.Image, bool]]
+    seg_results: Queue[Image.Image]
 
     threads: list[Thread] = []
+
+    last_lesion_type: int
+    last_lesion_class: int
 
     def __init__(self,
                  master: ctk.CTk,
                  options: Namespace,
                  events: Events,
-                 tasks: Queue[tuple[Image.Image, ctk.CTkButton, ctk.CTkLabel]],
-                 results: Queue[int],
+                 cls_tasks: Queue[Image.Image],
+                 cls_results: Queue[int],
+                 seg_tasks: Queue[tuple[Image.Image, bool]],
+                 seg_results: Queue[Image.Image],
                  **kwargs,
                  ):
         super().__init__(master, **kwargs)
 
         self.master: ctk.CTk = master
         self.events = events
-        self.tasks = tasks
-        self.results = results
+        self.cls_tasks = cls_tasks
+        self.cls_results = cls_results
+        self.seg_tasks = seg_tasks
+        self.seg_results = seg_results
 
         self.dnd_img = Image.open(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "dnd.png"))
 
-        thread = Worker(options.model, events, tasks, results)
+        thread = ClassificationWorker(options.cls_model, events, cls_tasks, cls_results)
         thread.start()
         self.threads.append(thread)
 
-        thread = Thread(target=self._wait_for_tensorflow_to_load)
+        thread = SegmentationWorker(options.seg_model, events, seg_tasks, seg_results)
+        thread.start()
+        self.threads.append(thread)
+
+        thread = Thread(target=self._wait_for_libraries_to_load)
         thread.start()
         self.threads.append(thread)
 
@@ -85,13 +121,13 @@ class UploadFrame(ctk.CTkFrame):
 
         self.hint_label = ctk.CTkLabel(
             master=self.master,
-            text="Tensorflow is loading. Please stand by...",
+            text="AI is loading. Please stand by...",
             # font=("Arial", 14), # TODO Railway
             height=30,
             width=224,
             corner_radius=0,
         )
-        self.hint_label.place(x=200, y=300)
+        self.hint_label.place(x=210, y=300)
 
         self.analyze_button = ctk.CTkButton(
             master=self.master,
@@ -104,12 +140,27 @@ class UploadFrame(ctk.CTkFrame):
             border_width=2,
             corner_radius=6,
             state=tk.DISABLED,
-            command=self._put_new_task_to_queue_on_click,
+            command=self._put_new_cls_task_to_queue,
         )
-        self.analyze_button.place(x=265, y=340)
+        self.analyze_button.place(x=220, y=340)
 
-    def _wait_for_tensorflow_to_load(self):
-        if self.events.tensorflow_loaded.wait(60.0):
+        self.show_more_button = ctk.CTkButton(
+            master=self.master,
+            text="More info",
+            # font=("undefined", 14), # TODO Railway
+            # text_color="#000000",
+            hover=True,
+            height=30,
+            width=95,
+            border_width=2,
+            corner_radius=6,
+            state=tk.DISABLED,
+            command=self._put_new_seg_task_to_queue,
+        )
+        self.show_more_button.place(x=325, y=340)
+
+    def _wait_for_libraries_to_load(self):
+        if self.events.tensorflow_loaded.wait(60.0) and self.events.yolo_loaded.wait(60.0):
             self.hint_label.configure(text="Waiting for an image...")
 
     def _update_frame_state_on_dnd(self, e: TkinterDnD.DnDEvent) -> None:
@@ -136,41 +187,103 @@ class UploadFrame(ctk.CTkFrame):
         )
 
         self.analyze_button.configure(state=tk.NORMAL)
+        self.show_more_button.configure(state=tk.DISABLED)
         self.hint_label.configure(text="Waiting for analysis")
 
-    def _put_new_task_to_queue_on_click(self):
+    def _put_new_cls_task_to_queue(self):
         if self.analyze_button.cget("state") == tk.NORMAL:
             self.analyze_button.configure(state=tk.DISABLED)
+            self.show_more_button.configure(state=tk.DISABLED)
 
             image: ctk.CTkImage = self.image_label.cget("image")
             image: Image.Image = image.cget("light_image")
 
-            thread = Thread(target=self._draw_inference_result_on_ready)
+            thread = Thread(target=self._draw_cls_inference_result)
             thread.start()
             self.threads.append(thread)
 
-            self.tasks.put((image, self.analyze_button, self.hint_label))
+            self.cls_tasks.put(image)
 
-    def _draw_inference_result_on_ready(self):
+    def _put_new_seg_task_to_queue(self):
+        if self.show_more_button.cget("state") == tk.NORMAL:
+            self.analyze_button.configure(state=tk.DISABLED)
+            self.show_more_button.configure(state=tk.DISABLED)
+
+            image: ctk.CTkImage = self.image_label.cget("image")
+            image: Image.Image = image.cget("light_image")
+
+            thread = Thread(target=self._draw_seg_inference_result)
+            thread.start()
+            self.threads.append(thread)
+
+            self.seg_tasks.put((image, True if self.last_lesion_type == LESION_TYPE_MALIGNANT else False))
+
+    def _draw_cls_inference_result(self):
         result: int = -1
 
         try:
-            result = self.results.get(timeout=15)
-            self.results.task_done()
+            result = self.cls_results.get(timeout=15)
+            self.cls_results.task_done()
         except Empty:
             pass
 
-        self.hint_label.configure(text="In this image: %s" % LESION_CLASSES[result])
+        if result in LESION_TYPE_DICT:
+            lesion_type = LESION_TYPE_DICT[result]
+        else:
+            lesion_type = LESION_TYPE_UNKNOWN
+
+        self.last_lesion_type = lesion_type
+        self.last_lesion_class = result
+
+        if lesion_type in LESION_TYPE_TEXT_DICT:
+            lesion_type_text = LESION_TYPE_TEXT_DICT[lesion_type]
+        else:
+            lesion_type_text = LESION_TYPE_TEXT_DICT[LESION_TYPE_UNKNOWN]
+
+        self.hint_label.configure(text="This lesion is %s" % lesion_type_text)
 
         if self.analyze_button.cget("state") == tk.DISABLED:
             self.analyze_button.configure(state=tk.NORMAL)
 
-        # Keep only alive threads in the list
-        self.threads[:] = [thread for thread in self.threads if thread.is_alive()]
+        if self.show_more_button.cget("state") == tk.DISABLED:
+            self.show_more_button.configure(state=tk.NORMAL)
+
+        self.thread_gc()
+
+    def _draw_seg_inference_result(self):
+        result: Image.Image | None = None
+
+        try:
+            result = self.seg_results.get(timeout=15)
+            self.seg_results.task_done()
+        except Empty:
+            pass
+
+        self.image_label.configure(
+            image=ctk.CTkImage(
+                light_image=result,
+                dark_image=result,
+                size=(224, 224),
+            ),
+        )
+
+        if self.analyze_button.cget("state") == tk.DISABLED:
+            self.analyze_button.configure(state=tk.NORMAL)
+
+        if self.show_more_button.cget("state") == tk.DISABLED:
+            self.show_more_button.configure(state=tk.NORMAL)
+
+        self.hint_label.configure(text="This lesion is %s" % LESION_CLASSES[self.last_lesion_class])
+
+        self.thread_gc()
 
     def redraw_page(self) -> None:
         self.reset_page()
         self.draw_page()
+
+    def thread_gc(self):
+        # Keep only alive threads in the list
+        self.threads[:] = [thread for thread in self.threads if thread.is_alive()]
 
     def destroy(self):
         for t in self.threads:
