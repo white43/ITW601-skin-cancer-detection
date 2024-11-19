@@ -22,7 +22,7 @@ window.geometry("640x480")
 window.title("AI for Skin Cancer Detection")
 
 cls_tasks: Queue[Image.Image] = Queue()
-cls_results: Queue[int] = Queue()
+cls_results: Queue[tuple[int, float]] = Queue()
 seg_tasks: Queue[tuple[Image.Image, bool]] = Queue()
 seg_results: Queue[Image.Image] = Queue()
 events = Events()

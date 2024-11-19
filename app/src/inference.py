@@ -12,13 +12,13 @@ class ClassificationWorker(Thread):
                  model: str,
                  events: Events,
                  tasks: Queue[Image.Image],
-                 results: Queue,
+                 results: Queue[tuple[int, float]],
                  ):
         Thread.__init__(self)
         self.events = events
         self.model: str = model
         self.tasks: Queue[Image.Image] = tasks
-        self.results: Queue = results
+        self.results: Queue[tuple[int, float]] = results
 
     def run(self):
         # Moving loading TF and other libraries off the main thread
@@ -36,10 +36,12 @@ class ClassificationWorker(Thread):
                     continue
 
                 img = img.resize((224, 224), resample=Image.BICUBIC)
-                prediction = np.argmax(model.predict(np.asarray(img)[np.newaxis], verbose=0), axis=1)[0]
+                prediction = model.predict(np.asarray(img)[np.newaxis], verbose=0)[0]
+                label = int(np.argmax(prediction, axis=0))
+                probability = float(prediction[label] * 100)
 
                 self.tasks.task_done()
-                self.results.put(prediction)
+                self.results.put((label, probability))
             else:
                 time.sleep(0.05)
 

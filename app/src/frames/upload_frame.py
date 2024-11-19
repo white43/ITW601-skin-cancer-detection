@@ -53,21 +53,21 @@ class UploadFrame(ctk.CTkFrame):
 
     events: Events
     cls_tasks: Queue[Image.Image]
-    cls_results: Queue[int]
+    cls_results: Queue[tuple[int, float]]
     seg_tasks: Queue[tuple[Image.Image, bool]]
     seg_results: Queue[Image.Image]
 
     threads: list[Thread] = []
 
-    last_lesion_type: int
-    last_lesion_class: int
+    last_lesion_binary_label: int
+    last_lesion_label: int
 
     def __init__(self,
                  master: ctk.CTk,
                  options: Namespace,
                  events: Events,
                  cls_tasks: Queue[Image.Image],
-                 cls_results: Queue[int],
+                 cls_results: Queue[tuple[int, float]],
                  seg_tasks: Queue[tuple[Image.Image, bool]],
                  seg_results: Queue[Image.Image],
                  **kwargs,
@@ -125,10 +125,10 @@ class UploadFrame(ctk.CTkFrame):
             text="AI is loading. Please stand by...",
             # font=("Arial", 14), # TODO Railway
             height=30,
-            width=224,
+            width=244,
             corner_radius=0,
         )
-        self.hint_label.place(x=210, y=300)
+        self.hint_label.place(x=200, y=300)
 
         self.analyze_button = ctk.CTkButton(
             master=self.master,
@@ -229,13 +229,14 @@ class UploadFrame(ctk.CTkFrame):
             thread.start()
             self.threads.append(thread)
 
-            self.seg_tasks.put((image, True if self.last_lesion_type == LESION_TYPE_MALIGNANT else False))
+            self.seg_tasks.put((image, True if self.last_lesion_binary_label == LESION_TYPE_MALIGNANT else False))
 
     def _draw_cls_inference_result(self):
-        result: int = -1
+        label: int = -1
+        probability: float = -1.0
 
         try:
-            result = self.cls_results.get(timeout=15)
+            label, probability = self.cls_results.get(timeout=15)
             self.cls_results.task_done()
         except Empty:
             CTkMessagebox(
@@ -244,16 +245,17 @@ class UploadFrame(ctk.CTkFrame):
                 message="Timeout while waiting for results",
             )
 
-        if result in LESION_TYPE_DICT:
-            lesion_type = LESION_TYPE_DICT[result]
+        if label in LESION_TYPE_DICT:
+            binary_label = LESION_TYPE_DICT[label]
         else:
-            lesion_type = LESION_TYPE_UNKNOWN
+            binary_label = LESION_TYPE_UNKNOWN
 
-        self.last_lesion_type = lesion_type
-        self.last_lesion_class = result
+        self.last_lesion_binary_label = binary_label
+        self.last_lesion_label = label
+        self.last_lesion_probability = probability
 
-        if lesion_type in LESION_TYPE_TEXT_DICT:
-            lesion_type_text = LESION_TYPE_TEXT_DICT[lesion_type]
+        if binary_label in LESION_TYPE_TEXT_DICT:
+            lesion_type_text = LESION_TYPE_TEXT_DICT[binary_label]
         else:
             lesion_type_text = LESION_TYPE_TEXT_DICT[LESION_TYPE_UNKNOWN]
 
@@ -294,7 +296,7 @@ class UploadFrame(ctk.CTkFrame):
         if self.show_more_button.cget("state") == tk.DISABLED:
             self.show_more_button.configure(state=tk.NORMAL)
 
-        self.hint_label.configure(text="This lesion is %s" % LESION_CLASSES[self.last_lesion_class])
+        self.hint_label.configure(text="This lesion is %s (%.0f%%)" % (LESION_CLASSES[self.last_lesion_label], self.last_lesion_probability))
 
         self.thread_gc()
 
