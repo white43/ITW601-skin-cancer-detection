@@ -104,7 +104,6 @@ class UploadFrame(ctk.CTkFrame):
         self.image_label = ctk.CTkButton(
             master=self.master,
             text="",
-            # font=("Arial", 14), # TODO Railway
             text_color="#333333",
             height=224,
             width=224,
@@ -123,18 +122,17 @@ class UploadFrame(ctk.CTkFrame):
         self.hint_label = ctk.CTkLabel(
             master=self.master,
             text="AI is loading. Please stand by...",
-            # font=("Arial", 14), # TODO Railway
+            font=("Raleway", 14),
             height=30,
-            width=244,
+            width=264,
             corner_radius=0,
         )
-        self.hint_label.place(x=200, y=300)
+        self.hint_label.place(x=190, y=300)
 
         self.analyze_button = ctk.CTkButton(
             master=self.master,
             text="Analyze",
-            # font=("undefined", 14), # TODO Railway
-            # text_color="#000000",
+            font=("Raleway", 14),
             hover=True,
             height=30,
             width=95,
@@ -148,8 +146,7 @@ class UploadFrame(ctk.CTkFrame):
         self.show_more_button = ctk.CTkButton(
             master=self.master,
             text="More info",
-            # font=("undefined", 14), # TODO Railway
-            # text_color="#000000",
+            font=("Raleway", 14),
             hover=True,
             height=30,
             width=95,
@@ -172,6 +169,7 @@ class UploadFrame(ctk.CTkFrame):
             CTkMessagebox(
                 title="Information",
                 message="Expected to get a JPG or PNG file",
+                font=("Raleway", 14)
             )
 
             return
@@ -183,6 +181,7 @@ class UploadFrame(ctk.CTkFrame):
                 icon="warning",
                 title="Error",
                 message="Could not read file: %s" % str(e),
+                font=("Raleway", 14)
             )
 
             return
@@ -243,6 +242,7 @@ class UploadFrame(ctk.CTkFrame):
                 icon="warning",
                 title="Error",
                 message="Timeout while waiting for results",
+                font=("Raleway", 14)
             )
 
         if label in LESION_TYPE_DICT:
@@ -280,6 +280,7 @@ class UploadFrame(ctk.CTkFrame):
                 icon="warning",
                 title="Error",
                 message="Timeout while waiting for results",
+                font=("Raleway", 14)
             )
 
         self.image_label.configure(
@@ -296,7 +297,7 @@ class UploadFrame(ctk.CTkFrame):
         if self.show_more_button.cget("state") == tk.DISABLED:
             self.show_more_button.configure(state=tk.NORMAL)
 
-        self.hint_label.configure(text="This lesion is %s (%.0f%%)" % (LESION_CLASSES[self.last_lesion_label], self.last_lesion_probability))
+        self.hint_label.configure(text="This is %s (%.0f%%)" % (LESION_CLASSES[self.last_lesion_label], self.last_lesion_probability))
 
         self.thread_gc()
 

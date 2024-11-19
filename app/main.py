@@ -1,4 +1,5 @@
 import argparse
+import os
 from queue import Queue
 
 import customtkinter as ctk
@@ -20,6 +21,8 @@ options = cli_opts.parse_args()
 window = Tk()
 window.geometry("640x480")
 window.title("AI for Skin Cancer Detection")
+
+ctk.FontManager.load_font(os.path.join(os.path.dirname(__file__), "assets", "fonts", "Raleway-Regular.ttf"))
 
 cls_tasks: Queue[Image.Image] = Queue()
 cls_results: Queue[tuple[int, float]] = Queue()
