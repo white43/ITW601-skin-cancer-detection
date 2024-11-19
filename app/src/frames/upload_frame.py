@@ -5,6 +5,7 @@ from queue import Queue, Empty
 from threading import Thread
 
 import customtkinter as ctk
+from CTkMessagebox import CTkMessagebox
 from PIL import Image
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
@@ -164,15 +165,27 @@ class UploadFrame(ctk.CTkFrame):
             self.hint_label.configure(text="Waiting for an image...")
 
     def _update_frame_state_on_dnd(self, e: TkinterDnD.DnDEvent) -> None:
-        filepath = e.data
+        filepath = str(e.data)
+        ext = filepath.lower()
 
-        if not filepath.endswith(".jpg") and not filepath.endswith(".jpeg"):
-            raise Exception("Not a JPG")
+        if not ext.endswith(".jpg") and not ext.endswith(".jpeg") and not ext.endswith(".png"):
+            CTkMessagebox(
+                title="Information",
+                message="Expected to get a JPG or PNG file",
+            )
+
+            return
 
         try:
             img = Image.open(filepath)
-        except Exception:
-            raise Exception("Couldn't read an image")
+        except Exception as e:
+            CTkMessagebox(
+                icon="warning",
+                title="Error",
+                message="Could not read file: %s" % str(e),
+            )
+
+            return
 
         self.image_label.configure(
             text="",
@@ -225,7 +238,11 @@ class UploadFrame(ctk.CTkFrame):
             result = self.cls_results.get(timeout=15)
             self.cls_results.task_done()
         except Empty:
-            pass
+            CTkMessagebox(
+                icon="warning",
+                title="Error",
+                message="Timeout while waiting for results",
+            )
 
         if result in LESION_TYPE_DICT:
             lesion_type = LESION_TYPE_DICT[result]
@@ -257,7 +274,11 @@ class UploadFrame(ctk.CTkFrame):
             result = self.seg_results.get(timeout=15)
             self.seg_results.task_done()
         except Empty:
-            pass
+            CTkMessagebox(
+                icon="warning",
+                title="Error",
+                message="Timeout while waiting for results",
+            )
 
         self.image_label.configure(
             image=ctk.CTkImage(
