@@ -59,6 +59,7 @@ class UploadFrame(ctk.CTkFrame):
 
     threads: list[Thread] = []
 
+    original_image: Image.Image | None
     last_lesion_binary_label: int
     last_lesion_label: int
 
@@ -190,6 +191,8 @@ class UploadFrame(ctk.CTkFrame):
             text="",
         )
 
+        self.original_image = img
+
         self.image_label.configure(
             image=ctk.CTkImage(
                 light_image=img,
@@ -207,28 +210,22 @@ class UploadFrame(ctk.CTkFrame):
             self.analyze_button.configure(state=tk.DISABLED)
             self.show_more_button.configure(state=tk.DISABLED)
 
-            image: ctk.CTkImage = self.image_label.cget("image")
-            image: Image.Image = image.cget("light_image")
-
             thread = Thread(target=self._draw_cls_inference_result)
             thread.start()
             self.threads.append(thread)
 
-            self.cls_tasks.put(image)
+            self.cls_tasks.put(self.original_image)
 
     def _put_new_seg_task_to_queue(self):
         if self.show_more_button.cget("state") == tk.NORMAL:
             self.analyze_button.configure(state=tk.DISABLED)
             self.show_more_button.configure(state=tk.DISABLED)
 
-            image: ctk.CTkImage = self.image_label.cget("image")
-            image: Image.Image = image.cget("light_image")
-
             thread = Thread(target=self._draw_seg_inference_result)
             thread.start()
             self.threads.append(thread)
 
-            self.seg_tasks.put((image, True if self.last_lesion_binary_label == LESION_TYPE_MALIGNANT else False))
+            self.seg_tasks.put((self.original_image, True if self.last_lesion_binary_label == LESION_TYPE_MALIGNANT else False))
 
     def _draw_cls_inference_result(self):
         label: int = -1
