@@ -33,4 +33,13 @@ events = Events()
 upload_frame = UploadFrame(window, options, events, cls_tasks, cls_results, seg_tasks, seg_results)
 app = App(upload_frame)
 
+
+def graceful_shutdown():
+    events.stop_everything.set()
+
+    if events.cls_runtime_stopped.wait(15) and events.yolo_stopped.wait(15):
+        window.destroy()
+
+
+window.protocol("WM_DELETE_WINDOW", lambda: graceful_shutdown())
 window.mainloop()

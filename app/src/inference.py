@@ -45,6 +45,10 @@ class ClassificationWorker(Thread):
             else:
                 time.sleep(0.05)
 
+            if self.events.stop_everything.is_set():
+                self.events.cls_runtime_stopped.set()
+                break
+
 
 class SegmentationWorker(Thread):
     def __init__(self,
@@ -102,3 +106,7 @@ class SegmentationWorker(Thread):
                 self.results.put(img)
             else:
                 time.sleep(0.05)
+
+            if self.events.stop_everything.is_set():
+                self.events.yolo_stopped.set()
+                break
