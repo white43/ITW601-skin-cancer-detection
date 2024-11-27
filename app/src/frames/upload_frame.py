@@ -159,7 +159,7 @@ class UploadFrame(ctk.CTkFrame):
         self.show_more_button.place(x=325, y=340)
 
     def _wait_for_libraries_to_load(self):
-        if self.events.tensorflow_loaded.wait(60.0) and self.events.yolo_loaded.wait(60.0):
+        if self.events.cls_runtime_loaded.wait(60.0) and self.events.yolo_loaded.wait(60.0):
             self.hint_label.configure(text="Waiting for an image...")
 
     def _update_frame_state_on_dnd(self, e: TkinterDnD.DnDEvent) -> None:

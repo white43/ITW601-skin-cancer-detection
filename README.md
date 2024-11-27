@@ -8,4 +8,4 @@
 
 ## How to run the app
 
-`python -m app.main --cls-model path-to-model.keras --seg-model path-to-model.pt`
+`python -m app.main --cls-model classification-model.onnx --seg-model path-to-model.pt`

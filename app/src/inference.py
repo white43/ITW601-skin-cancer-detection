@@ -21,12 +21,12 @@ class ClassificationWorker(Thread):
         self.results: Queue[tuple[int, float]] = results
 
     def run(self):
-        # Moving loading TF and other libraries off the main thread
-        import keras as k
+        # Moving inference off the main thread
         import numpy as np
+        import onnxruntime as ort
 
-        model: k.models.Model = k.models.load_model(self.model, compile=True)
-        self.events.tensorflow_loaded.set()
+        model = ort.InferenceSession(self.model)
+        self.events.cls_runtime_loaded.set()
 
         while True:
             if self.tasks.qsize() > 0:
@@ -36,8 +36,8 @@ class ClassificationWorker(Thread):
                     continue
 
                 img = img.resize((224, 224), resample=Image.BICUBIC)
-                prediction = model.predict(np.asarray(img)[np.newaxis], verbose=0)[0]
-                label = int(np.argmax(prediction, axis=0))
+                prediction = model.run(None, {"input_layer": np.asarray(img).astype(np.float32)[np.newaxis]})[0][0]
+                label = int(np.argmax(prediction))
                 probability = float(prediction[label] * 100)
 
                 self.tasks.task_done()
