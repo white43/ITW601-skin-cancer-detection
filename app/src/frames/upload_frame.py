@@ -193,13 +193,29 @@ class UploadFrame(ctk.CTkFrame):
             text="",
         )
 
-        width, height = img.size
+        orig_width, orig_height = img.size
 
-        # Take central crop from an image of arbitrary size
-        if width > height:
-            img = img.crop(((width - height) // 2, 0, (width - height) // 2 + height, height))
-        elif height > width:
-            img = img.crop((0, (height - width) // 2, width, (height - width) // 2 + width))
+        # Our classification models expect images of size 224x224, so we would like to have crops of size 448x448,
+        # 896x896, and so on. This way, downscaling operation is relatively easy, as it would require scaling by a power
+        # of two.
+        desired_crop_size = 448
+
+        # Take central crop from an image of arbitrary size with dimensions >448
+        if orig_width > desired_crop_size and orig_height > desired_crop_size:
+            factor = min(orig_width // desired_crop_size, orig_height // desired_crop_size)
+            desired_crop_size *= factor
+
+            left_offset = (orig_width - desired_crop_size) // 2
+            upper_offset = (orig_height - desired_crop_size) // 2
+            img = img.crop((left_offset, upper_offset, left_offset + desired_crop_size, upper_offset + desired_crop_size))
+        # Take central crop from an image of arbitrary size with dimensions <=448
+        else:
+            if orig_width > orig_height:
+                left_offset = (orig_width - orig_height) // 2
+                img = img.crop((left_offset, 0, left_offset + orig_height, orig_height))
+            elif orig_height > orig_width:
+                upper_offset = (orig_height - orig_width) // 2
+                img = img.crop((0, upper_offset, orig_width, upper_offset + orig_width))
 
         self.original_image = img
 
