@@ -35,7 +35,7 @@ class ClassificationWorker(Thread):
                 if not isinstance(img, Image.Image):
                     continue
 
-                img = img.resize((224, 224), resample=Image.BICUBIC)
+                img = img.resize((224, 224), resample=Image.NEAREST)
                 prediction = model.run(None, {"input_layer": np.asarray(img).astype(np.float32)[np.newaxis]})[0][0]
                 label = int(np.argmax(prediction))
                 probability = float(prediction[label] * 100)
@@ -84,7 +84,7 @@ class SegmentationWorker(Thread):
                 else:
                     color = (0, 255, 0)
 
-                img = img.resize((224, 224), resample=Image.BICUBIC)
+                img = img.resize((224, 224), resample=Image.NEAREST)
                 results = model.predict(
                     img,
                     imgsz=(224, 224),

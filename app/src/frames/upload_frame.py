@@ -193,6 +193,14 @@ class UploadFrame(ctk.CTkFrame):
             text="",
         )
 
+        width, height = img.size
+
+        # Take central crop from an image of arbitrary size
+        if width > height:
+            img = img.crop(((width - height) // 2, 0, (width - height) // 2 + height, height))
+        elif height > width:
+            img = img.crop((0, (height - width) // 2, width, (height - width) // 2 + width))
+
         self.original_image = img
 
         self.image_label.configure(
