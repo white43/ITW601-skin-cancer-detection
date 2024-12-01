@@ -82,7 +82,8 @@ class UploadFrame(ctk.CTkFrame):
         self.seg_tasks = seg_tasks
         self.seg_results = seg_results
 
-        self.dnd_img = Image.open(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "dnd.png"))
+        self.dnd_light_img = Image.open(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "dnd-light.png"))
+        self.dnd_dark_img = Image.open(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "dnd-dark.png"))
 
         thread = ClassificationWorker(options.cls_model, events, cls_tasks, cls_results)
         thread.start()
@@ -110,7 +111,8 @@ class UploadFrame(ctk.CTkFrame):
             width=224,
             border_width=1,
             image=ctk.CTkImage(
-                light_image=self.dnd_img,
+                light_image=self.dnd_light_img,
+                dark_image=self.dnd_dark_img,
                 size=(224, 224),
             ),
             hover=False,
