@@ -166,6 +166,10 @@ class UploadFrame(ctk.CTkFrame):
 
     def _update_frame_state_on_dnd(self, e: TkinterDnD.DnDEvent) -> None:
         filepath = str(e.data)
+
+        if filepath.startswith('{') and filepath.endswith('}'):
+            filepath = filepath[1:-1]
+
         ext = filepath.lower()
 
         if not ext.endswith(".jpg") and not ext.endswith(".jpeg") and not ext.endswith(".png"):
