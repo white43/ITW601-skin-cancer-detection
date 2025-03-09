@@ -64,11 +64,11 @@ class SegmentationWorker(Thread):
         self.results: Queue[Image.Image] = results
 
     def run(self):
-        # Moving loading YOLO and other libraries off the main thread
-        from ultralytics import YOLO
+        # Moving inference off the main thread
+        import numpy as np
+        import onnxruntime as ort
 
-        model = YOLO(self.model)
-        print(model.info())
+        model = ort.InferenceSession(self.model)
 
         self.events.yolo_loaded.set()
 
@@ -84,23 +84,34 @@ class SegmentationWorker(Thread):
                 else:
                     color = (0, 255, 0)
 
-                img = img.resize((224, 224), resample=Image.NEAREST)
-                results = model.predict(
-                    img,
-                    imgsz=(224, 224),
-                    conf=0.5,
-                    iou=0.2,
-                    save=False,
-                    show_labels=False,
-                    show_conf=False,
-                    show_boxes=False,
-                )
+                # TODO: Train another segmentation model to work with 448x448 images
+                img = img.resize((640, 640), resample=Image.NEAREST)
+
+                img_for_inf = np.asarray(img).astype(np.float32)
+                img_for_inf = np.transpose(img_for_inf, (2, 0, 1))  # RGB -> BRG
+                img_for_inf /= 255
+
+                input_name = model.get_inputs()[0].name
+                prediction = model.run(None, {input_name: img_for_inf[np.newaxis]})[0][0]
+
+                # User: Roman Velichkin
+                # Published: Jan 20, 2025
+                # Title: Guide - How to interpet onnx predictions from detection model
+                # Link: https://github.com/orgs/ultralytics/discussions/18776
+                prediction = prediction.T
+
+                boxes = prediction[:, :4]
+                class_probs = prediction[:, 4]
 
                 draw = ImageDraw.Draw(img)
 
-                for result in results:
-                    for xyxy in result.boxes.xyxy.numpy().tolist():
-                        draw.rectangle(xyxy, outline=color, width=2)
+                # TODO: Add non-maximum suppression (NMS)
+                for x, y, w, h in boxes[class_probs > 0.5]:
+                    # https://github.com/microsoft/onnxruntime-extensions/blob/5c53aaad627d7cf4a8f25efcfde849da586cfe45/tutorials/yolov8_pose_e2e.py#L276
+                    x -= (w / 2)
+                    y -= (h / 2)
+
+                    draw.rectangle([x, y, x+w, y+w], outline=color, width=2)
 
                 self.tasks.task_done()
                 self.results.put(img)
