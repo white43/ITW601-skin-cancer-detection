@@ -5,10 +5,10 @@ from queue import Queue
 import customtkinter as ctk
 from PIL import Image
 
-from .src.app import App
-from .src.events import Events
-from .src.frames.upload_frame import UploadFrame
-from .src.overrides import Tk
+from app.src.app import App
+from app.src.events import Events
+from app.src.frames.upload_frame import UploadFrame
+from app.src.overrides import Tk
 
 ctk.set_appearance_mode("system")
 ctk.set_default_color_theme("dark-blue")
