@@ -8,4 +8,12 @@
 
 ## How to run the app
 
-`python -m app.main --cls-model classification-model.onnx --seg-model path-to-model.pt`
+```shell
+python -m app.main --cls-model classification-model.onnx --seg-model path-to-model.pt
+```
+
+## How to package the app
+
+```shell
+pyinstaller -F -s -p venv/lib/python3.13/site-packages/ --collect-all tkinterdnd2.tkdnd.linux-x64 --collect-all PIL._tkinter_finder --add-data "./app/assets/*.png:./assets/" --add-data "./app/assets/fonts/*.ttf:./assets/fonts/" ./app/main.py
+```

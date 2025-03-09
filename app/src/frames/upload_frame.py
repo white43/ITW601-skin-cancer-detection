@@ -11,6 +11,7 @@ from tkinterdnd2 import TkinterDnD, DND_FILES
 
 from ..events import Events
 from ..inference import ClassificationWorker, SegmentationWorker
+from ..utils import resource_path
 
 LESION_TYPE_UNKNOWN = -1
 LESION_TYPE_BENIGN = 0
@@ -82,8 +83,8 @@ class UploadFrame(ctk.CTkFrame):
         self.seg_tasks = seg_tasks
         self.seg_results = seg_results
 
-        self.dnd_light_img = Image.open(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "dnd-light.png"))
-        self.dnd_dark_img = Image.open(os.path.join(os.path.dirname(__file__), "..", "..", "assets", "dnd-dark.png"))
+        self.dnd_light_img = Image.open(resource_path("dnd-light.png"))
+        self.dnd_dark_img = Image.open(resource_path("dnd-dark.png"))
 
         thread = ClassificationWorker(options.cls_model, events, cls_tasks, cls_results)
         thread.start()

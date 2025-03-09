@@ -9,6 +9,7 @@ from app.src.app import App
 from app.src.events import Events
 from app.src.frames.upload_frame import UploadFrame
 from app.src.overrides import Tk
+from app.src.utils import resource_path
 
 ctk.set_appearance_mode("system")
 ctk.set_default_color_theme("dark-blue")
@@ -22,7 +23,7 @@ window = Tk()
 window.geometry("640x480")
 window.title("AI for Skin Cancer Detection")
 
-ctk.FontManager.load_font(os.path.join(os.path.dirname(__file__), "assets", "fonts", "Raleway-Regular.ttf"))
+ctk.FontManager.load_font(resource_path("fonts", "Raleway-Regular.ttf"))
 
 cls_tasks: Queue[Image.Image] = Queue()
 cls_results: Queue[tuple[int, float]] = Queue()
