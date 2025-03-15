@@ -1,4 +1,4 @@
-import os
+import queue
 import tkinter as tk
 from argparse import Namespace
 from queue import Queue, Empty
@@ -72,6 +72,7 @@ class UploadFrame(ctk.CTkFrame):
                  cls_results: Queue[tuple[int, float]],
                  seg_tasks: Queue[tuple[Image.Image, bool]],
                  seg_results: Queue[Image.Image],
+                 download_meter: Queue[tuple[int, int]],
                  **kwargs,
                  ):
         super().__init__(master, **kwargs)
@@ -86,11 +87,15 @@ class UploadFrame(ctk.CTkFrame):
         self.dnd_light_img = Image.open(resource_path("dnd-light.png"))
         self.dnd_dark_img = Image.open(resource_path("dnd-dark.png"))
 
-        thread = ClassificationWorker(options.cls_model, events, cls_tasks, cls_results)
+        thread = ClassificationWorker(options, events, cls_tasks, cls_results)
         thread.start()
         self.threads.append(thread)
 
-        thread = SegmentationWorker(options.seg_model, events, seg_tasks, seg_results)
+        thread = SegmentationWorker(options, events, seg_tasks, seg_results)
+        thread.start()
+        self.threads.append(thread)
+
+        thread = Thread(target=lambda: self._wait_for_models_to_be_downloaded(download_meter))
         thread.start()
         self.threads.append(thread)
 
@@ -125,7 +130,7 @@ class UploadFrame(ctk.CTkFrame):
 
         self.hint_label = ctk.CTkLabel(
             master=self.master,
-            text="AI is loading. Please stand by...",
+            text="",
             font=("Raleway", 14),
             height=30,
             width=264,
@@ -167,10 +172,35 @@ class UploadFrame(ctk.CTkFrame):
     def _wait_for_libraries_to_load(self):
         if (
             self.events.ui_loaded.wait(60.0)
+            and self.events.models_downloaded.wait(1800.0)
             and self.events.cls_runtime_loaded.wait(60.0)
             and self.events.yolo_loaded.wait(60.0)
         ):
             self.hint_label.configure(text="Waiting for an image...")
+
+    def _wait_for_models_to_be_downloaded(self, meter: queue.Queue[tuple[int, int]]):
+        downloaded: int = 0
+
+        self.events.ui_loaded.wait(60.0)
+
+        while True:
+            if self.events.models_downloaded.is_set():
+                break
+
+            try:
+                current = meter.get()
+
+                downloaded += current[0]
+                total_size = current[1]
+
+                self.hint_label.configure(
+                    text="AI is loading: %.1f%%. Please stand by..." % (downloaded * 100 / total_size)
+                )
+
+                if downloaded >= total_size:
+                    self.events.models_downloaded.set()
+            except Empty:
+                pass
 
     def _update_frame_state_on_dnd(self, e: TkinterDnD.DnDEvent) -> None:
         filepath = str(e.data)

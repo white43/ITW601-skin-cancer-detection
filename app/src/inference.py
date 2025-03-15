@@ -1,4 +1,5 @@
 import time
+from argparse import Namespace
 from queue import Queue
 from threading import Thread
 
@@ -9,14 +10,14 @@ from .events import Events
 
 class ClassificationWorker(Thread):
     def __init__(self,
-                 model: str,
+                 options: Namespace,
                  events: Events,
                  tasks: Queue[Image.Image],
                  results: Queue[tuple[int, float]],
                  ):
         Thread.__init__(self)
         self.events = events
-        self.model: str = model
+        self.options: Namespace = options
         self.tasks: Queue[Image.Image] = tasks
         self.results: Queue[tuple[int, float]] = results
 
@@ -25,7 +26,10 @@ class ClassificationWorker(Thread):
         import numpy as np
         import onnxruntime as ort
 
-        model = ort.InferenceSession(self.model)
+        # Wait for models to be downloaded from S3
+        self.events.models_downloaded.wait(1800.0)
+
+        model = ort.InferenceSession(self.options.cls_model)
         self.events.cls_runtime_loaded.set()
 
         while True:
@@ -52,14 +56,14 @@ class ClassificationWorker(Thread):
 
 class SegmentationWorker(Thread):
     def __init__(self,
-                 model: str,
+                 options: Namespace,
                  events: Events,
                  tasks: Queue[tuple[Image.Image, bool]],
                  results: Queue[Image.Image],
                  ):
         Thread.__init__(self)
         self.events = events
-        self.model: str = model
+        self.options: Namespace = options
         self.tasks: Queue[tuple[Image.Image, bool]] = tasks
         self.results: Queue[Image.Image] = results
 
@@ -68,7 +72,10 @@ class SegmentationWorker(Thread):
         import numpy as np
         import onnxruntime as ort
 
-        model = ort.InferenceSession(self.model)
+        # Wait for models to be downloaded from S3
+        self.events.models_downloaded.wait(1800.0)
+
+        model = ort.InferenceSession(self.options.seg_model)
 
         self.events.yolo_loaded.set()
 

@@ -2,10 +2,12 @@ import os
 import sys
 
 
-def resource_path(*relative_path):
+def cwd() -> str:
     try:
-        base_path = os.path.join(sys._MEIPASS, "assets")
+        return sys._MEIPASS
     except Exception:
-        base_path = os.path.join(os.getcwd(), "app", "assets")
+        return os.path.join(os.getcwd(), "app")
 
-    return os.path.join(base_path, *relative_path)
+
+def resource_path(*relative_path) -> str:
+    return os.path.join(cwd(), "assets", *relative_path)

@@ -1,6 +1,6 @@
 import argparse
-import os
 from queue import Queue
+from threading import Thread
 
 import customtkinter as ctk
 from PIL import Image
@@ -9,14 +9,15 @@ from app.src.app import App
 from app.src.events import Events
 from app.src.frames.upload_frame import UploadFrame
 from app.src.overrides import Tk
+from app.src.update import download_models
 from app.src.utils import resource_path
 
 ctk.set_appearance_mode("system")
 ctk.set_default_color_theme("dark-blue")
 
 cli_opts = argparse.ArgumentParser()
-cli_opts.add_argument("--cls-model", required=True)
-cli_opts.add_argument("--seg-model", required=True)
+cli_opts.add_argument("--cls-model")
+cli_opts.add_argument("--seg-model")
 options = cli_opts.parse_args()
 
 window = Tk()
@@ -29,9 +30,15 @@ cls_tasks: Queue[Image.Image] = Queue()
 cls_results: Queue[tuple[int, float]] = Queue()
 seg_tasks: Queue[tuple[Image.Image, bool]] = Queue()
 seg_results: Queue[Image.Image] = Queue()
+# A queue for displaying current progress to users while models are being downloading
+download_meter: Queue[tuple[int, int]] = Queue()
 events = Events()
 
-upload_frame = UploadFrame(window, options, events, cls_tasks, cls_results, seg_tasks, seg_results)
+# A separate thread to download models and avoid main thread blocking
+downloading = Thread(target=lambda: download_models(options, events, download_meter))
+downloading.start()
+
+upload_frame = UploadFrame(window, options, events, cls_tasks, cls_results, seg_tasks, seg_results, download_meter)
 app = App(upload_frame)
 
 
