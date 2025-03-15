@@ -24,43 +24,55 @@ def download_models(options: Namespace, events: Events, meter: Queue[tuple[int, 
 
     latest = response.json()
 
+    models_dir = os.path.join(cwd(), "models")
+
+    if not os.path.exists(models_dir):
+        os.mkdir(models_dir, mode=0o755)
+
+    cls_path: str | None = None
+    seg_path: str | None = None
     result: dict[str, str] = dict()
     total_size: int = 0
 
     if not options.cls_model and "cls" in latest:
-        total_size += int(latest["cls"]["size"])
+        cls_path = os.path.join(cwd(), "models", latest["cls"]["file"])
+        options.cls_model = cls_path
 
-    if not options.cls_model and "seg" in latest:
-        total_size += int(latest["seg"]["size"])
+        if not os.path.exists(cls_path):
+            total_size += int(latest["cls"]["size"])
 
-    if not options.cls_model and "cls" in latest:
-        _download_model(options, latest["cls"]["file"], meter, total_size)
-        options.cls_model = os.path.join(cwd(), "models", latest["cls"]["file"])
+    if not options.seg_model and "seg" in latest:
+        seg_path = os.path.join(cwd(), "models", latest["seg"]["file"])
+        options.seg_model = seg_path
 
-    if not options.cls_model and "seg" in latest:
-        _download_model(options, latest["seg"]["size"], meter, total_size)
-        options.cls_model = os.path.join(cwd(), "models", latest["seg"]["file"])
+        if not os.path.exists(seg_path):
+            total_size += int(latest["seg"]["size"])
+
+    if cls_path is not None and not os.path.exists(cls_path):
+        _download_model(options, latest["cls"]["file"], cls_path, meter, total_size)
+
+    if seg_path is not None and not os.path.exists(seg_path):
+        _download_model(options, latest["seg"]["file"], seg_path, meter, total_size)
 
     events.models_downloaded.set()
 
     return result
 
 
-def _download_model(options: Namespace, filename: str, meter: Queue[tuple[int, int]], total_size: int) -> None:
-    models_dir = os.path.join(cwd(), "models")
-
-    if not os.path.exists(models_dir):
-        os.mkdir(models_dir, mode=0o755)
-
-    cls_path = os.path.join(cwd(), "models", filename)
-
-    if not os.path.exists(cls_path):
+def _download_model(
+    options: Namespace,
+    filename: str,
+    dest: str,
+    meter: Queue[tuple[int, int]],
+    total_size: int,
+) -> None:
+    if not os.path.exists(dest):
         cls_response = requests.get(options.download_from + "/" + filename, stream=True)
 
         if not cls_response.ok:
             return
 
-        with open(cls_path, mode="xb") as fp:
+        with open(dest, mode="xb") as fp:
             for chunk in cls_response.iter_content(chunk_size=4096):
                 if chunk:
                     fp.write(chunk)
