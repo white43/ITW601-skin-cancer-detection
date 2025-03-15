@@ -1,8 +1,8 @@
-customtkinter>=5, <6
-tkinterdnd2>=0.4, <0.5
-Pillow>=11, <12
-onnxruntime~=1.20.0
-numpy>=1.26, <2
-CTkMessagebox>=2.7, <3
-requests~=2.32.3
-appdirs~=1.4.4
+customtkinter==5.2.2
+tkinterdnd2==0.4.3
+Pillow==11.1.0
+onnxruntime==1.20.1
+numpy==1.26.4
+CTkMessagebox==2.7
+requests==2.32.3
+appdirs==1.4.4
