@@ -5,3 +5,4 @@ onnxruntime~=1.20.0
 numpy>=1.26, <2
 CTkMessagebox>=2.7, <3
 requests~=2.32.3
+appdirs~=1.4.4

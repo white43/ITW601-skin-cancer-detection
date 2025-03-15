@@ -16,7 +16,6 @@ python -m app.main --cls-model classification-model.onnx --seg-model path-to-mod
 
 ```shell
 pyinstaller -F -s \
-    -p venv/lib/python3.13/site-packages/ \
     --collect-all tkinterdnd2.tkdnd.linux-x64 \
     --collect-all PIL._tkinter_finder \
     --add-data "./app/assets/*.png:./assets/" \

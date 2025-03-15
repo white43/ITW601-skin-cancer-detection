@@ -2,11 +2,11 @@ import os
 from argparse import Namespace
 from queue import Queue
 
+import appdirs
 import requests
 from CTkMessagebox import CTkMessagebox
 
 from app.src.events import Events
-from app.src.utils import cwd
 
 
 def download_models(options: Namespace, events: Events, meter: Queue[tuple[int, int]]) -> dict[str, str] | None:
@@ -24,10 +24,10 @@ def download_models(options: Namespace, events: Events, meter: Queue[tuple[int, 
 
     latest = response.json()
 
-    models_dir = os.path.join(cwd(), "models")
+    cache_dir = os.path.join(appdirs.user_cache_dir(appname="ITA602"), "models")
 
-    if not os.path.exists(models_dir):
-        os.mkdir(models_dir, mode=0o755)
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir, mode=0o755)
 
     cls_path: str | None = None
     seg_path: str | None = None
@@ -35,14 +35,14 @@ def download_models(options: Namespace, events: Events, meter: Queue[tuple[int, 
     total_size: int = 0
 
     if not options.cls_model and "cls" in latest:
-        cls_path = os.path.join(cwd(), "models", latest["cls"]["file"])
+        cls_path = os.path.join(cache_dir, latest["cls"]["file"])
         options.cls_model = cls_path
 
         if not os.path.exists(cls_path):
             total_size += int(latest["cls"]["size"])
 
     if not options.seg_model and "seg" in latest:
-        seg_path = os.path.join(cwd(), "models", latest["seg"]["file"])
+        seg_path = os.path.join(cache_dir, latest["seg"]["file"])
         options.seg_model = seg_path
 
         if not os.path.exists(seg_path):
