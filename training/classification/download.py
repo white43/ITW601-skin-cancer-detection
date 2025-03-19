@@ -1,5 +1,6 @@
 import argparse
 import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import shutil
 import zipfile
 import pandas as pd
@@ -35,7 +36,7 @@ def extract_images(archive: str, dest: str):
         for file in zp.filelist:
             basename = os.path.basename(file.filename)
 
-            if basename[-3:] == "jpg" and not os.path.exists(os.path.join(dest, basename)):
+            if (basename[-3:] == "png" or basename[-3:] == "jpg") and not os.path.exists(os.path.join(dest, basename)):
                 with zp.open(file.filename) as source, open(os.path.join(dest, basename), "wb") as target:
                     shutil.copyfileobj(source, target)
                     counter += 1
