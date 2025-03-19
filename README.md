@@ -33,10 +33,15 @@ At the moment, Tensorflow 2.14 requires Python 3.11 to work.
 2. `source venv/bin/activate`
 3. `pip install -r training/requirements.txt`
 
-## How to download datasets for classification
+## How to download datasets
+
+The dataset for classification needs about ~6GB of free space on your disk 
+(including its archive), while the dataset for segmentation will need ~25GB
+of free space (including its archive).
 
 ```shell
 python -m training.classification.download --cache isic2018-datasets --target isic2018-classification
+python -m training.segmentation.download --cache isic2018-datasets --target isic2018-segmentation
 ```
 
 Where the `cache` and `target` arguments are the directories (relative or 
