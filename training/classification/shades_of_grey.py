@@ -12,7 +12,7 @@ class ShadesOfGrey(ImageOnlyTransform):
     def __init__(self,
         norm_p: int = 6,
         gamma: float | None = None,
-        always_apply: bool | None = None,
+        always_apply: bool = False,
         p: float = 0.5):
         super().__init__(p=p, always_apply=always_apply)
 
@@ -28,7 +28,7 @@ class ShadesOfGrey(ImageOnlyTransform):
     # Link: https://github.com/thecolourgroup/shadesofgrey/blob/8d2fb9c5e56455731ae66abfb1c3c6a3e7836409/shadesofgrey.c
     def apply(self, img: np.ndarray, *args: Any, **params: Any) -> np.ndarray:
         if isinstance(img.dtype, np.uint8):
-            raise Exception("ColorConstancy expects images to be of type uint8, %s given" % str(img.dtype))
+            raise Exception("ShadesOfGrey expects images to be of type uint8, %s given" % str(img.dtype))
 
         # L512-L531
         if self.to_linear_lut is not None:
