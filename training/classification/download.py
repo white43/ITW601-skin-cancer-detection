@@ -3,8 +3,10 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import shutil
 import zipfile
-import pandas as pd
+
 import keras
+import pandas as pd
+from tqdm import tqdm
 
 URL_PREFIX = "https://isic-challenge-data.s3.amazonaws.com/2018/"
 
@@ -33,7 +35,7 @@ def extract_images(archive: str, dest: str):
     counter = 0
 
     with zipfile.ZipFile(os.path.join(archive)) as zp:
-        for file in zp.filelist:
+        for file in tqdm(zp.filelist):
             basename = os.path.basename(file.filename)
 
             if (basename[-3:] == "png" or basename[-3:] == "jpg") and not os.path.exists(os.path.join(dest, basename)):
@@ -131,14 +133,14 @@ for label in LABELS:
     if not os.path.exists(os.path.join(options.target, "val", label)):
         os.makedirs(os.path.join(options.target, "val", label), mode=0o755)
 
-    for _, row in df_train[df_train[label] == 1].iterrows():
+    for _, row in tqdm(df_train[df_train[label] == 1].iterrows(), desc='Moving train/%s' % label):
         source_path = os.path.join(options.target, "train", row["image"] + ".jpg")
 
         if os.path.exists(source_path):
             target_path = os.path.join(options.target, "train", label, row["image"] + ".jpg")
             os.replace(source_path, target_path)
 
-    for _, row in df_val[df_val[label] == 1].iterrows():
+    for _, row in tqdm(df_val[df_val[label] == 1].iterrows(), desc='Moving val/%s' % label):
         source_path = os.path.join(options.target, "val", row["image"] + ".jpg")
 
         if os.path.exists(source_path):

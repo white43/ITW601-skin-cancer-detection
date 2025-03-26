@@ -9,6 +9,7 @@ import cv2
 import keras
 import numpy as np
 from PIL import Image
+from tqdm import tqdm
 
 URL_PREFIX = "https://isic-challenge-data.s3.amazonaws.com/2018/"
 
@@ -35,7 +36,7 @@ def extract_images(archive: str, dest: str):
     counter = 0
 
     with zipfile.ZipFile(os.path.join(archive)) as zp:
-        for file in zp.filelist:
+        for file in tqdm(zp.filelist):
             basename = os.path.basename(file.filename)
 
             if (basename[-3:] == "png" or basename[-3:] == "jpg") and not os.path.exists(os.path.join(dest, basename)):
@@ -98,7 +99,7 @@ def convert_segment_masks_to_yolo_seg(masks_dir, output_dir, pixel_to_class_mapp
                 ├─ mask_yolo_03.txt
                 └─ mask_yolo_04.txt
     """
-    for mask_path in Path(masks_dir).iterdir():
+    for mask_path in tqdm(Path(masks_dir).iterdir()):
         if mask_path.suffix == ".png":
             mask = cv2.imread(str(mask_path), cv2.IMREAD_GRAYSCALE)  # Read the mask image in grayscale
             img_height, img_width = mask.shape  # Get image dimensions
@@ -135,8 +136,6 @@ def convert_segment_masks_to_yolo_seg(masks_dir, output_dir, pixel_to_class_mapp
                 for item in yolo_format_data:
                     line = " ".join(map(str, item))
                     file.write(line + "\n")
-            print(f"Processed and stored at {output_path} imgsz = {img_height} x {img_width}")
-
 
 os.makedirs(options.cache, mode=0o755, exist_ok=True)
 os.makedirs(options.target, mode=0o755, exist_ok=True)
