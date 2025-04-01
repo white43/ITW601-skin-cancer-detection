@@ -3,10 +3,9 @@ pandas==2.2.3
 numpy==1.26.0
 tensorflow==2.14.0
 scikit-learn==1.6.1
-albumentations==1.4.7
+albumentations==1.4.24
 PyYAML==6.0.1
 ultralytics==8.3.92
-https://github.com/tobiasvanderwerff/RandAugment/archive/a78976c303d46f50e8934586066d3d936514ded4.zip
 tqdm==4.67.1
 # This flag is only used in my local development environment as I don't have a dGPU
 --extra-index-url https://download.pytorch.org/whl/cpu
