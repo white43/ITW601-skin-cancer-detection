@@ -1,2 +1,5 @@
 **/__pycache__/**
 **.onnx
+
+build
+dist
