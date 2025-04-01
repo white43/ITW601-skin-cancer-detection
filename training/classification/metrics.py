@@ -1,3 +1,4 @@
+import keras
 import tensorflow as tf
 
 
@@ -80,6 +81,11 @@ class MeanRecall(tf.keras.metrics.Metric):
     def result(self):
         per_class_accuracy = tf.math.divide_no_nan(self.y_pred, self.y_true)
         return tf.reduce_mean(per_class_accuracy)
+
+    def reset_state(self):
+        keras.backend.batch_set_value(
+            [(v, tf.zeros(v.shape.as_list())) for v in self.variables]
+        )
 
     @staticmethod
     def _ensure_sample_weight_is_none(sample_weight):
