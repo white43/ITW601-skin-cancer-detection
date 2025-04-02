@@ -1,5 +1,6 @@
 import keras
 import tensorflow as tf
+from tensorflow.python.ops.gen_math_ops import approximate_equal
 
 
 class MeanRecall(tf.keras.metrics.Metric):
@@ -14,6 +15,9 @@ class MeanRecall(tf.keras.metrics.Metric):
         self._ensure_sample_weight_is_none(sample_weight)
         self._ensure_rank_sizes(y_pred, y_true)
         tf.ensure_shape(y_true, y_pred.shape)
+
+        y_true = tf.cast(y_true, dtype=self.dtype)
+        y_pred = tf.cast(y_pred, dtype=self.dtype)
 
         # Example 2D tensor ground truth (y_true):
         # [[0, 0, 1, 0, 0]
@@ -32,23 +36,11 @@ class MeanRecall(tf.keras.metrics.Metric):
         #  [0, 1, 0, 0, 0]]
         y_pred = tf.one_hot(y_pred, self.num_labels, dtype=self.dtype)
 
-        # Convert both ground truth and predictions from 0/1 to False/True
-        # [[False, False, True, False, False]
-        #  [False, False, True, False, False]]
-        y_true = tf.cast(y_true, dtype=tf.bool)
-        # [[False, False, True, False, False]
-        #  [False, True, False, False, False]]
-        y_pred = tf.cast(y_pred, dtype=tf.bool)
-
         # Find predictions that are correct (in False/True format) and convert
         # them to 0/1 format
         # [[1, 1, 1, 1, 1]
         #  [1, 0, 0, 1, 1]]
-        match = tf.cast(tf.equal(y_true, y_pred), dtype=self.dtype)
-
-        # Convert both ground truth and predictions back to 0/1 format
-        y_true = tf.cast(y_true, dtype=self.dtype)
-        y_pred = tf.cast(y_pred, dtype=self.dtype)
+        match = tf.cast(approximate_equal(y_true, y_pred), dtype=self.dtype)
 
         # Leave only true positives (where 1*1). This zeroes true negatives (0*0),
         # false positives (0*1) and false negatives (1*0)
@@ -77,6 +69,9 @@ class MeanRecall(tf.keras.metrics.Metric):
 
         self.y_true.assign_add(y_true)
         self.y_pred.assign_add(y_pred)
+
+    def get_config(self):
+        return {"name": self.name, "dtype": self.dtype, "num_labels": self.num_labels}
 
     def result(self):
         per_class_accuracy = tf.math.divide_no_nan(self.y_pred, self.y_true)
