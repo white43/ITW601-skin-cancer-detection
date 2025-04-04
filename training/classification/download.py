@@ -21,6 +21,7 @@ LABELS = ["MEL", "NV", "BCC", "AKIEC", "BKL", "DF", "VASC"]
 cli_opts = argparse.ArgumentParser()
 cli_opts.add_argument("--cache", type=str, default="isic2018-datasets")
 cli_opts.add_argument("--target", type=str, default="isic2018-classification")
+cli_opts.add_argument("--clean", action='store_true', default=False, help="Remove downloaded ZIP archives at the end")
 options = cli_opts.parse_args()
 
 if options.cache[0] != "/":
@@ -78,6 +79,9 @@ if not os.path.exists(os.path.join(options.target, "train")):
         os.path.join(options.target, "train"),
     )
 
+    if options.clean:
+        os.unlink(os.path.join(options.cache, CLASSIFICATION_TRAINING_INPUT + ".zip"))
+
 # Download and extract a validation dataset
 if not os.path.exists(os.path.join(options.target, "val")):
     keras.utils.get_file(
@@ -93,31 +97,40 @@ if not os.path.exists(os.path.join(options.target, "val")):
         os.path.join(options.target, "val"),
     )
 
-# Download ground truth for training and validation datasets
-keras.utils.get_file(
-    origin=URL_PREFIX + CLASSIFICATION_TRAINING_GROUND_TRUTH + ".zip",
-    cache_subdir=options.cache,
-    extract=False,
-)
-
-keras.utils.get_file(
-    origin=URL_PREFIX + CLASSIFICATION_TEST_GROUND_TRUTH + ".zip",
-    cache_subdir=options.cache,
-    extract=False,
-)
+    if options.clean:
+        os.unlink(os.path.join(options.cache, CLASSIFICATION_TEST_INPUT + ".zip"))
 
 # Extract CSV files from ground truth zip files
 if not os.path.exists(os.path.join(options.cache, CLASSIFICATION_TRAINING_GROUND_TRUTH + ".csv")):
+    # Download ground truth for training and validation datasets
+    keras.utils.get_file(
+        origin=URL_PREFIX + CLASSIFICATION_TRAINING_GROUND_TRUTH + ".zip",
+        cache_subdir=options.cache,
+        extract=False,
+    )
+
     extraxt_csv(
         os.path.join(options.cache, CLASSIFICATION_TRAINING_GROUND_TRUTH + ".zip"),
         os.path.join(options.cache),
     )
 
+    if options.clean:
+        os.unlink(os.path.join(options.cache, CLASSIFICATION_TRAINING_GROUND_TRUTH + ".zip"))
+
 if not os.path.exists(os.path.join(options.cache, CLASSIFICATION_TEST_GROUND_TRUTH + ".csv")):
+    keras.utils.get_file(
+        origin=URL_PREFIX + CLASSIFICATION_TEST_GROUND_TRUTH + ".zip",
+        cache_subdir=options.cache,
+        extract=False,
+    )
+
     extraxt_csv(
         os.path.join(options.cache, CLASSIFICATION_TEST_GROUND_TRUTH + ".zip"),
         os.path.join(options.cache),
     )
+
+    if options.clean:
+        os.unlink(os.path.join(options.cache, CLASSIFICATION_TEST_GROUND_TRUTH + ".zip"))
 
 df_train = pd.read_csv(os.path.join(options.cache, CLASSIFICATION_TRAINING_GROUND_TRUTH + ".csv"))
 df_val = pd.read_csv(os.path.join(options.cache, CLASSIFICATION_TEST_GROUND_TRUTH + ".csv"))

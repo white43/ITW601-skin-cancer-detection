@@ -22,6 +22,7 @@ SEGMENTATION_TEST_GROUND_TRUTH = "ISIC2018_Task1_Test_GroundTruth"
 cli_opts = argparse.ArgumentParser()
 cli_opts.add_argument("--cache", type=str, default="isic2018-datasets")
 cli_opts.add_argument("--target", type=str, default="isic2018-segmentation")
+cli_opts.add_argument("--clean", action='store_true', default=False, help="Remove downloaded ZIP archives at the end")
 options = cli_opts.parse_args()
 
 if options.cache[0] != "/":
@@ -155,6 +156,9 @@ if not os.path.exists(os.path.join(options.target, "train", "images")):
         os.path.join(options.target, "train", "images"),
     )
 
+    if options.clean:
+        os.unlink(os.path.join(options.cache, SEGMENTATION_TRAINING_INPUT + ".zip"))
+
 # Download and extract labels for a training dataset
 if not os.path.exists(os.path.join(options.target, "train", "labels")):
     keras.utils.get_file(
@@ -177,6 +181,9 @@ if not os.path.exists(os.path.join(options.target, "train", "labels")):
         {255: 0}
     )
 
+    if options.clean:
+        os.unlink(os.path.join(options.cache, SEGMENTATION_TRAINING_GROUND_TRUTH + ".zip"))
+
 # Download and extract a validation dataset
 if not os.path.exists(os.path.join(options.target, "val", "images")):
     keras.utils.get_file(
@@ -191,6 +198,9 @@ if not os.path.exists(os.path.join(options.target, "val", "images")):
         os.path.join(options.cache, SEGMENTATION_TEST_INPUT + ".zip"),
         os.path.join(options.target, "val", "images"),
     )
+
+    if options.clean:
+        os.unlink(os.path.join(options.cache, SEGMENTATION_TEST_INPUT + ".zip"))
 
 # Download and extract labels for a validation dataset
 if not os.path.exists(os.path.join(options.target, "val", "labels")):
@@ -213,3 +223,6 @@ if not os.path.exists(os.path.join(options.target, "val", "labels")):
         os.path.join(options.target, "val", "labels"),
         {255: 0}
     )
+
+    if options.clean:
+        os.unlink(os.path.join(options.cache, SEGMENTATION_TEST_GROUND_TRUTH + ".zip"))
