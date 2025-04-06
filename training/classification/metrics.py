@@ -3,11 +3,13 @@ import tensorflow as tf
 from tensorflow.python.ops.gen_math_ops import approximate_equal
 
 
+@keras.saving.register_keras_serializable(name="mean_recall")
 class MeanRecall(tf.keras.metrics.Metric):
-    def __init__(self, num_labels: int, name=None, dtype=None, **kwargs):
+    def __init__(self, num_labels: int, verbose: int = 0, name=None, dtype=None, **kwargs):
         super().__init__(name, dtype, **kwargs)
 
         self.num_labels: int = num_labels
+        self.verbose: int = verbose
         self.y_true = self.add_weight(name="y_true", shape=num_labels, initializer="zeros", dtype=self.dtype)
         self.y_pred = self.add_weight(name="y_pred", shape=num_labels, initializer="zeros", dtype=self.dtype)
 
@@ -74,8 +76,15 @@ class MeanRecall(tf.keras.metrics.Metric):
         return {"name": self.name, "dtype": self.dtype, "num_labels": self.num_labels}
 
     def result(self):
-        per_class_accuracy = tf.math.divide_no_nan(self.y_pred, self.y_true)
-        return tf.reduce_mean(per_class_accuracy)
+        per_class_recall = tf.math.divide_no_nan(self.y_pred, self.y_true)
+        mean_recall = tf.reduce_mean(per_class_recall)
+
+        if self.verbose > 0:
+            tf.print("\ny_true: ", self.y_true, summarize=-1)
+            tf.print("y_pred: ", self.y_pred, summarize=-1)
+            tf.print("Classes: ", per_class_recall, "\n", summarize=-1)
+
+        return mean_recall
 
     def reset_state(self):
         keras.backend.batch_set_value(
