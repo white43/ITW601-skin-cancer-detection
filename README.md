@@ -46,3 +46,27 @@ python -m training.segmentation.download --cache isic2018-datasets --target isic
 
 Where the `cache` and `target` arguments are the directories (relative or 
 absolute) to store zipped and unzipped data, respectfully.
+
+## How to evaluate trained models
+
+Trained models are stored in the directory named `runs` with two subdirectories
+for classification models and segmentation. Each model has a distinct command 
+for evaluation.
+
+The following command prints a few metrics (categorical loss and mean recall) 
+to stdout: 
+
+```shell
+python -m training.evaluation.tf --models path/to/model1.leras path/to/model2.leras --quick
+```
+
+A more comprehensive approach is to use other command that evaluates roughly a 
+dozen of metrics including but not limited to per-class accuracy, sensitivity 
+(recall), specificity, dice score and AUC, as well as their mean values. This 
+command requires providing a file containing ground truth. This file is 
+downloaded among other files using `training.classification.download` and 
+typically localed under `isic2018-datasets` directory.
+
+```shell
+python -m training.evaluation.tf --models path/to/model1.leras path/to/model2.leras --ground-truth isic2018-datasets/ISIC2018_Task3_Test_GroundTruth.csv
+```
