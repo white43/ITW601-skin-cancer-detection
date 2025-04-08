@@ -1,12 +1,14 @@
 import argparse
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import shutil
 import zipfile
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import keras
 import pandas as pd
 from tqdm import tqdm
+
+from training.classification.constants import LABELS
 
 URL_PREFIX = "https://isic-challenge-data.s3.amazonaws.com/2018/"
 
@@ -15,8 +17,6 @@ CLASSIFICATION_TRAINING_GROUND_TRUTH = "ISIC2018_Task3_Training_GroundTruth"
 
 CLASSIFICATION_TEST_INPUT = "ISIC2018_Task3_Test_Input"
 CLASSIFICATION_TEST_GROUND_TRUTH = "ISIC2018_Task3_Test_GroundTruth"
-
-LABELS = ["MEL", "NV", "BCC", "AKIEC", "BKL", "DF", "VASC"]
 
 cli_opts = argparse.ArgumentParser()
 cli_opts.add_argument("--cache", type=str, default="isic2018-datasets")
