@@ -110,15 +110,18 @@ class SegmentationWorker(Thread):
                 boxes = prediction[:, :4]
                 class_probs = prediction[:, 4]
 
-                draw = ImageDraw.Draw(img)
-
                 # TODO: Add non-maximum suppression (NMS)
-                for x, y, w, h in boxes[class_probs > 0.5]:
-                    # https://github.com/microsoft/onnxruntime-extensions/blob/5c53aaad627d7cf4a8f25efcfde849da586cfe45/tutorials/yolov8_pose_e2e.py#L276
-                    x -= (w / 2)
-                    y -= (h / 2)
+                max_class_prob = np.max(class_probs)
 
-                    draw.rectangle([x, y, x+w, y+w], outline=color, width=2)
+                if max_class_prob > 0.25:
+                    draw = ImageDraw.Draw(img)
+
+                    for x, y, w, h in boxes[class_probs == max_class_prob]:
+                        # https://github.com/microsoft/onnxruntime-extensions/blob/5c53aaad627d7cf4a8f25efcfde849da586cfe45/tutorials/yolov8_pose_e2e.py#L276
+                        x -= (w / 2)
+                        y -= (h / 2)
+
+                        draw.rectangle([max(x, 1), max(y, 1), min(x+w, 639), min(y+h, 639)], outline=color, width=2)
 
                 self.tasks.task_done()
                 self.results.put(img)
