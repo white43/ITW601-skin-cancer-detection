@@ -231,6 +231,10 @@ class UploadFrame(ctk.CTkFrame):
 
             return
 
+        # PNG files often contain alpha channel
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+
         self.image_label.configure(
             text="",
         )
