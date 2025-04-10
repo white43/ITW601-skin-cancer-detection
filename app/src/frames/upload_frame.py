@@ -3,6 +3,7 @@ import tkinter as tk
 from argparse import Namespace
 from queue import Queue, Empty
 from threading import Thread
+from typing import Optional
 
 import customtkinter as ctk
 from CTkMessagebox import CTkMessagebox
@@ -47,23 +48,6 @@ LESION_TYPE_TEXT_DICT = {
 
 
 class UploadFrame(ctk.CTkFrame):
-    image_label: ctk.CTkButton | None
-    find_lesion_button: ctk.CTkButton | None
-    predict_class_button: ctk.CTkButton | None
-    hint_label: ctk.CTkLabel | None
-
-    events: Events
-    cls_tasks: Queue[Image.Image]
-    cls_results: Queue[tuple[int, float]]
-    seg_tasks: Queue[Image.Image]
-    seg_results: Queue[tuple[Image.Image, int, int, int, int]]
-
-    threads: list[Thread] = []
-
-    original_image: Image.Image | None
-    segmented_image: Image.Image | None
-    lesion_box: tuple[int, int, int, int] | None = None
-
     def __init__(self,
                  master: ctk.CTk,
                  options: Namespace,
@@ -78,14 +62,25 @@ class UploadFrame(ctk.CTkFrame):
         super().__init__(master, **kwargs)
 
         self.master: ctk.CTk = master
-        self.events = events
-        self.cls_tasks = cls_tasks
-        self.cls_results = cls_results
-        self.seg_tasks = seg_tasks
-        self.seg_results = seg_results
+        self.events: Events = events
+        self.cls_tasks: Queue[Image.Image] = cls_tasks
+        self.cls_results: Queue[tuple[int, float]] = cls_results
+        self.seg_tasks: Queue[Image.Image] = seg_tasks
+        self.seg_results: Queue[tuple[Image.Image, int, int, int, int]] = seg_results
+
+        self.original_image: Optional[Image.Image] = None
+        self.segmented_image: Optional[Image.Image] = None
+        self.lesion_box: Optional[tuple[int, int, int, int]] = None
 
         self.dnd_light_img = Image.open(resource_path("dnd-light.png"))
         self.dnd_dark_img = Image.open(resource_path("dnd-dark.png"))
+
+        self.image_label: Optional[ctk.CTkButton] = None
+        self.find_lesion_button: Optional[ctk.CTkButton] = None
+        self.predict_class_button: Optional[ctk.CTkButton] = None
+        self.hint_label: Optional[ctk.CTkLabel] = None
+
+        self.threads: list[Thread] = []
 
         thread = ClassificationWorker(options, events, cls_tasks, cls_results)
         thread.start()
