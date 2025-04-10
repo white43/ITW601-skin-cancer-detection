@@ -6,7 +6,7 @@ from threading import Thread
 
 import customtkinter as ctk
 from CTkMessagebox import CTkMessagebox
-from PIL import Image
+from PIL import Image, ImageDraw
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
 from ..events import Events
@@ -48,21 +48,21 @@ LESION_TYPE_TEXT_DICT = {
 
 class UploadFrame(ctk.CTkFrame):
     image_label: ctk.CTkButton | None
-    analyze_button: ctk.CTkButton | None
-    show_more_button: ctk.CTkButton | None
+    find_lesion_button: ctk.CTkButton | None
+    predict_class_button: ctk.CTkButton | None
     hint_label: ctk.CTkLabel | None
 
     events: Events
     cls_tasks: Queue[Image.Image]
     cls_results: Queue[tuple[int, float]]
-    seg_tasks: Queue[tuple[Image.Image, bool]]
-    seg_results: Queue[Image.Image]
+    seg_tasks: Queue[Image.Image]
+    seg_results: Queue[tuple[Image.Image, int, int, int, int]]
 
     threads: list[Thread] = []
 
     original_image: Image.Image | None
-    last_lesion_binary_label: int
-    last_lesion_label: int
+    segmented_image: Image.Image | None
+    lesion_box: tuple[int, int, int, int] | None = None
 
     def __init__(self,
                  master: ctk.CTk,
@@ -70,8 +70,8 @@ class UploadFrame(ctk.CTkFrame):
                  events: Events,
                  cls_tasks: Queue[Image.Image],
                  cls_results: Queue[tuple[int, float]],
-                 seg_tasks: Queue[tuple[Image.Image, bool]],
-                 seg_results: Queue[Image.Image],
+                 seg_tasks: Queue[Image.Image],
+                 seg_results: Queue[tuple[Image.Image, int, int, int, int]],
                  download_meter: Queue[tuple[int, int]],
                  **kwargs,
                  ):
@@ -138,23 +138,9 @@ class UploadFrame(ctk.CTkFrame):
         )
         self.hint_label.place(x=190, y=300)
 
-        self.analyze_button = ctk.CTkButton(
+        self.find_lesion_button = ctk.CTkButton(
             master=self.master,
-            text="Analyze",
-            font=("Raleway", 14),
-            hover=True,
-            height=30,
-            width=95,
-            border_width=2,
-            corner_radius=6,
-            state=tk.DISABLED,
-            command=self._put_new_cls_task_to_queue,
-        )
-        self.analyze_button.place(x=220, y=340)
-
-        self.show_more_button = ctk.CTkButton(
-            master=self.master,
-            text="More info",
+            text="Find lesion",
             font=("Raleway", 14),
             hover=True,
             height=30,
@@ -164,7 +150,21 @@ class UploadFrame(ctk.CTkFrame):
             state=tk.DISABLED,
             command=self._put_new_seg_task_to_queue,
         )
-        self.show_more_button.place(x=325, y=340)
+        self.find_lesion_button.place(x=220, y=340)
+
+        self.predict_class_button = ctk.CTkButton(
+            master=self.master,
+            text="Predict class",
+            font=("Raleway", 14),
+            hover=True,
+            height=30,
+            width=95,
+            border_width=2,
+            corner_radius=6,
+            state=tk.DISABLED,
+            command=self._put_new_cls_task_to_queue,
+        )
+        self.predict_class_button.place(x=325, y=340)
 
         # By using this event we prevent errors in _wait_for_libraries_to_load due to fast ONNX loading
         self.events.ui_loaded.set()
@@ -273,31 +273,31 @@ class UploadFrame(ctk.CTkFrame):
             ),
         )
 
-        self.analyze_button.configure(state=tk.NORMAL)
-        self.show_more_button.configure(state=tk.DISABLED)
+        self.find_lesion_button.configure(state=tk.NORMAL)
+        self.predict_class_button.configure(state=tk.DISABLED)
         self.hint_label.configure(text="Waiting for analysis")
 
     def _put_new_cls_task_to_queue(self):
-        if self.analyze_button.cget("state") == tk.NORMAL:
-            self.analyze_button.configure(state=tk.DISABLED)
-            self.show_more_button.configure(state=tk.DISABLED)
+        if self.find_lesion_button.cget("state") == tk.NORMAL:
+            self.find_lesion_button.configure(state=tk.DISABLED)
+            self.predict_class_button.configure(state=tk.DISABLED)
 
             thread = Thread(target=self._draw_cls_inference_result)
             thread.start()
             self.threads.append(thread)
 
-            self.cls_tasks.put(self.original_image)
+            self.cls_tasks.put(self.segmented_image)
 
     def _put_new_seg_task_to_queue(self):
-        if self.show_more_button.cget("state") == tk.NORMAL:
-            self.analyze_button.configure(state=tk.DISABLED)
-            self.show_more_button.configure(state=tk.DISABLED)
+        if self.find_lesion_button.cget("state") == tk.NORMAL:
+            self.find_lesion_button.configure(state=tk.DISABLED)
+            self.predict_class_button.configure(state=tk.DISABLED)
 
             thread = Thread(target=self._draw_seg_inference_result)
             thread.start()
             self.threads.append(thread)
 
-            self.seg_tasks.put((self.original_image, True if self.last_lesion_binary_label == LESION_TYPE_MALIGNANT else False))
+            self.seg_tasks.put(self.original_image)
 
     def _draw_cls_inference_result(self):
         label: int = -1
@@ -319,30 +319,50 @@ class UploadFrame(ctk.CTkFrame):
         else:
             binary_label = LESION_TYPE_UNKNOWN
 
-        self.last_lesion_binary_label = binary_label
-        self.last_lesion_label = label
-        self.last_lesion_probability = probability
-
         if binary_label in LESION_TYPE_TEXT_DICT:
-            lesion_type_text = LESION_TYPE_TEXT_DICT[binary_label]
+            binary_label_text = LESION_TYPE_TEXT_DICT[binary_label]
         else:
-            lesion_type_text = LESION_TYPE_TEXT_DICT[LESION_TYPE_UNKNOWN]
+            binary_label_text = LESION_TYPE_TEXT_DICT[LESION_TYPE_UNKNOWN]
 
-        self.hint_label.configure(text="This lesion is %s" % lesion_type_text)
+        if binary_label == LESION_TYPE_UNKNOWN:
+            self.hint_label.configure(text="I am not sure what it is...")
+        else:
+            self.hint_label.configure(text="It is %s (%s, %.0f%%)" % (binary_label_text, LESION_CLASSES[label], probability))
 
-        if self.analyze_button.cget("state") == tk.DISABLED:
-            self.analyze_button.configure(state=tk.NORMAL)
+            if self.lesion_box[1] > 0:
+                img = self.segmented_image.copy()
 
-        if self.show_more_button.cget("state") == tk.DISABLED:
-            self.show_more_button.configure(state=tk.NORMAL)
+                ImageDraw.Draw(img).rectangle(
+                    xy=self.lesion_box,
+                    outline=(255, 0, 0) if binary_label == LESION_TYPE_MALIGNANT else (0, 255, 0),
+                    width=round(img.size[0] * 0.01),
+                )
+
+                self.image_label.configure(
+                    image=ctk.CTkImage(
+                        light_image=img,
+                        dark_image=img,
+                        size=(224, 224),
+                    ),
+                )
+
+        if self.find_lesion_button.cget("state") == tk.DISABLED:
+            self.find_lesion_button.configure(state=tk.NORMAL)
+
+        if self.predict_class_button.cget("state") == tk.DISABLED:
+            self.predict_class_button.configure(state=tk.NORMAL)
 
         self.thread_gc()
 
     def _draw_seg_inference_result(self):
-        result: Image.Image | None = None
+        img: Image.Image | None = None
+        x0: int = 0
+        y0: int = 0
+        x1: int = 0
+        y1: int = 0
 
         try:
-            result = self.seg_results.get(timeout=15)
+            (img, x0, y0, x1, y1) = self.seg_results.get(timeout=15)
             self.seg_results.task_done()
         except Empty:
             CTkMessagebox(
@@ -352,21 +372,35 @@ class UploadFrame(ctk.CTkFrame):
                 font=("Raleway", 14)
             )
 
+        # Save square crop and box coordinates around a lesion
+        self.segmented_image = img
+        self.lesion_box = (x0, y0, x1, y1)
+
+        if img is not None and x1 > 0:
+            ImageDraw.Draw(img).rectangle(
+                xy=(x0, y0, x1, y1),
+                outline=(0, 0, 0),
+                width=round(img.size[0] * 0.01),
+            )
+
         self.image_label.configure(
             image=ctk.CTkImage(
-                light_image=result,
-                dark_image=result,
+                light_image=img,
+                dark_image=img,
                 size=(224, 224),
             ),
         )
 
-        if self.analyze_button.cget("state") == tk.DISABLED:
-            self.analyze_button.configure(state=tk.NORMAL)
+        if self.find_lesion_button.cget("state") == tk.DISABLED:
+            self.find_lesion_button.configure(state=tk.NORMAL)
 
-        if self.show_more_button.cget("state") == tk.DISABLED:
-            self.show_more_button.configure(state=tk.NORMAL)
+        if self.predict_class_button.cget("state") == tk.DISABLED:
+            self.predict_class_button.configure(state=tk.NORMAL)
 
-        self.hint_label.configure(text="This is %s (%.0f%%)" % (LESION_CLASSES[self.last_lesion_label], self.last_lesion_probability))
+        if y0 > 0:
+            self.hint_label.configure(text="A lesion is found.")
+        else:
+            self.hint_label.configure(text="No lesion is found, but you can still try predicting")
 
         self.thread_gc()
 
