@@ -36,7 +36,7 @@ download_meter: Queue[tuple[int, int]] = Queue()
 events = Events()
 
 # A separate thread to download models and avoid main thread blocking
-downloading = Thread(target=lambda: download_models(options, events, download_meter))
+downloading = Thread(target=lambda: download_models(options, events, download_meter), name="download_models")
 downloading.start()
 
 upload_frame = UploadFrame(window, options, events, cls_tasks, cls_results, seg_tasks, seg_results, download_meter)

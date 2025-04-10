@@ -1,4 +1,5 @@
 import queue
+import time
 import tkinter as tk
 from argparse import Namespace
 from queue import Queue, Empty
@@ -183,7 +184,7 @@ class UploadFrame(ctk.CTkFrame):
                 break
 
             try:
-                current = meter.get()
+                current = meter.get_nowait()
 
                 downloaded += current[0]
                 total_size = current[1]
@@ -195,7 +196,7 @@ class UploadFrame(ctk.CTkFrame):
                 if downloaded >= total_size:
                     self.events.models_downloaded.set()
             except Empty:
-                pass
+                time.sleep(0.05)
 
     def _update_frame_state_on_dnd(self, e: TkinterDnD.DnDEvent) -> None:
         filepath = str(e.data)
