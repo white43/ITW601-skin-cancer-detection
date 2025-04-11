@@ -100,20 +100,21 @@ class SegmentationWorker(Thread):
 
     @staticmethod
     def _process_image(model, origin_img: Image.Image) -> tuple[Image.Image, int, int, int, int]:
-        may_be_crop: bool = origin_img.size[0] > 640
+        input_size = model.get_inputs()[0].shape[2]
+        input_name = model.get_inputs()[0].name
+
+        may_be_crop: bool = origin_img.size[0] > input_size
 
         while True:
             origin_size: int = origin_img.size[0]
-            origin_ratio: float = origin_size / 640
+            origin_ratio: float = origin_size / input_size
 
-            # TODO: Train another segmentation model to work with 448x448 images
-            img = origin_img.resize((640, 640), resample=Image.NEAREST)
+            img = origin_img.resize((input_size, input_size), resample=Image.NEAREST)
 
             img_for_inf = np.asarray(img).astype(np.float32)
             img_for_inf = np.transpose(img_for_inf, (2, 0, 1))  # RGB -> BRG
             img_for_inf /= 255
 
-            input_name = model.get_inputs()[0].name
             prediction = model.run(None, {input_name: img_for_inf[np.newaxis]})[0][0]
 
             # User: Roman Velichkin
@@ -143,7 +144,7 @@ class SegmentationWorker(Thread):
                     ch = h * origin_ratio
 
                     max_lesion_side = max(cw, ch)
-                    crop_size = math.ceil(max_lesion_side / 640) * 640
+                    crop_size = math.ceil(max_lesion_side / input_size) * input_size
 
                     if crop_size < origin_size:
                         # https://github.com/microsoft/onnxruntime-extensions/blob/5c53aaad627d7cf4a8f25efcfde849da586cfe45/tutorials/yolov8_pose_e2e.py#L276
