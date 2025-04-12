@@ -65,8 +65,11 @@ dozen of metrics including but not limited to per-class accuracy, sensitivity
 (recall), specificity, dice score and AUC, as well as their mean values. This 
 command requires providing a file containing ground truth. This file is 
 downloaded among other files using `training.classification.download` and 
-typically localed under `isic2018-datasets` directory.
+typically localed under `isic2018-datasets` directory. A file-accumulator will
+be used to average individual results in multimodel mode.
 
 ```shell
-python -m training.evaluation.tf --models path/to/model1.leras path/to/model2.leras --ground-truth isic2018-datasets/ISIC2018_Task3_Test_GroundTruth.csv
+python -m training.evaluation.tf --models path/to/model1.leras path/to/model2.leras \
+    --ground-truth isic2018-datasets/ISIC2018_Task3_Test_GroundTruth.csv
+    --reduce ~/Desktop/accumulator.csv
 ```

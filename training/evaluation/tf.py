@@ -23,15 +23,24 @@ cli_opts = argparse.ArgumentParser()
 cli_opts.add_argument("--models", nargs='+', required=True, help="A list of models to run predictions against")
 cli_opts.add_argument("--quick", action='store_true', default=False, help="Use built-in evaluate() method on a model")
 cli_opts.add_argument("--ground-truth", type=str, default=None, help="A CSV file with the ground truth")
+cli_opts.add_argument("--reduce", type=str, default=None,
+                      help="A CSV file to accumulate individual probabilities from models and give average result")
 args = cli_opts.parse_args()
 
 if not args.quick and not args.ground_truth:
     print("Ground truth required")
     exit(1)
 
+if len(args.models) > 1 and args.reduce is None:
+    print("A file to accumulate probabilities is needed in multi-model mode")
+    exit(1)
+
 
 class Evaluation:
     def evaluate(self, model_path: str, opts: Options, ground_truth: str | None = None) -> None:
+        pass
+
+    def dump_probabilities(self, path: str):
         pass
 
 
@@ -65,6 +74,9 @@ class ComprehensiveEvaluation(Evaluation):
     their mean values.
     """
 
+    def __init__(self):
+        self.accumulator: dict[str, np.ndarray] = {}
+
     def evaluate(self, model_path: str, opts: Options, ground_truth: str | None = None) -> None:
         results = []
 
@@ -79,12 +91,18 @@ class ComprehensiveEvaluation(Evaluation):
         for file_batch, [image_batch, _] in tqdm(ds, total=length):
             file_batch.astype('U')
             predictions = model_class.predict_on_batch(image_batch)
-            predictions = np.argmax(predictions, axis=1)
 
             for file, prediction in zip(file_batch, predictions):
+                basename = os.path.basename(str(file))[:-5]
+
+                if basename not in self.accumulator:
+                    self.accumulator[basename] = np.zeros(len(LABELS))
+
+                self.accumulator[basename] += prediction
+
                 one_hot = np.zeros(len(LABELS))
-                one_hot[prediction] = 1.0
-                results.append([os.path.basename(str(file))[:-5]] + one_hot.tolist())
+                one_hot[np.argmax(prediction)] = 1.0
+                results.append([basename] + one_hot.tolist())
 
         with open(model_path + ".csv", 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
@@ -101,6 +119,16 @@ class ComprehensiveEvaluation(Evaluation):
 
         print(score.to_string())
 
+    def dump_probabilities(self, path: str):
+        with open(path, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['image'] + LABELS)
+
+            for k, v in sorted(self.accumulator.items(), key=itemgetter(0)):
+                one_hot = np.zeros(len(LABELS))
+                one_hot[np.argmax(v)] = 1.0
+                writer.writerow([k] + one_hot.tolist())
+
 
 test = evaluation_factory(args)
 
@@ -113,3 +141,16 @@ for model in args.models:
         opts=options,
         ground_truth=args.ground_truth,
     )
+
+if args.reduce is not None:
+    test.dump_probabilities(args.reduce)
+
+    print("Average result:")
+
+    score = ClassificationScore.from_file(
+        pathlib.Path(args.ground_truth),
+        pathlib.Path(args.reduce),
+        ClassificationMetric(ClassificationMetric.BALANCED_ACCURACY.value),
+    )
+
+    print(score.to_string())
