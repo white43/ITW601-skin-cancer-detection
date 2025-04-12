@@ -25,7 +25,6 @@ class ClassificationWorker(Thread):
 
     def run(self):
         # Moving inference off the main thread
-        import numpy as np
         import onnxruntime as ort
 
         # Wait for models to be downloaded from S3
@@ -61,13 +60,13 @@ class SegmentationWorker(Thread):
                  options: Namespace,
                  events: Events,
                  tasks: Queue[Image.Image],
-                 results: Queue[tuple[Image.Image, int, int, int, int]],
+                 results: Queue[tuple[Image.Image, tuple[int, int, int, int]]],
                  ):
         Thread.__init__(self)
         self.events = events
         self.options: Namespace = options
         self.tasks: Queue[Image.Image] = tasks
-        self.results: Queue[tuple[Image.Image, int, int, int, int]] = results
+        self.results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = results
 
     def run(self):
         # Moving inference off the main thread
@@ -87,10 +86,29 @@ class SegmentationWorker(Thread):
                 if not isinstance(img, Image.Image):
                     continue
 
-                img, x, y, w, h = self._process_image(model, img)
+                rel_lesion_float = self._run_inference(model, img, 0.25)
+
+                # No lesion has been found
+                if rel_lesion_float[2] == 0 or rel_lesion_float[3] == 0:
+                    self.tasks.task_done()
+                    self.results.put((img, (0, 0, 0, 0)))
+                    continue
+
+                rel_crop_float = self._find_crop_around(rel_lesion_float, 224 / img.size[0])
+
+                # A lesion has been found but no crop needed
+                if rel_crop_float[2] == 0 or rel_crop_float[3] == 0:
+                    self.tasks.task_done()
+                    self.results.put((img, self._to_absolute_int_values(img.size[0], rel_lesion_float)))
+                    continue
+
+                rel_lesion_float = self._find_lesion_coordinates_within_crop(rel_crop_float, rel_lesion_float)
+                rel_crop_int = self._to_relative_int_values(img.size[0], rel_crop_float)
+                abs_crop_int = self._to_absolute_int_values(img.size[0], rel_crop_float)
+                abs_lesion_int = self._to_absolute_int_values(rel_crop_int[2], rel_lesion_float)
 
                 self.tasks.task_done()
-                self.results.put((img, x, y, x + w, y + h))
+                self.results.put((img.crop(abs_crop_int), abs_lesion_int))
             else:
                 time.sleep(0.05)
 
@@ -99,78 +117,124 @@ class SegmentationWorker(Thread):
                 break
 
     @staticmethod
-    def _process_image(model, origin_img: Image.Image) -> tuple[Image.Image, int, int, int, int]:
+    def _run_inference(model, image: Image.Image, threshold: float) -> tuple[float, float, float, float]:
+        """
+        Runs inference on the image argument against the model argument. Threshold represents the level of confidence.
+        The result will be in a relative form [0, 1] with respect to the original image.
+        """
+        original_size = image.size[0]
+
         input_size = model.get_inputs()[0].shape[2]
         input_name = model.get_inputs()[0].name
+        input_ratio = original_size / input_size
 
-        may_be_crop: bool = origin_img.size[0] > input_size
+        if input_size != original_size:
+            working_copy = image.resize(
+                size=(input_size, input_size),
+                resample=Image.NEAREST if input_ratio > 1 else Image.BILINEAR,
+            )
+        else:
+            working_copy = image.copy()
 
-        while True:
-            origin_size: int = origin_img.size[0]
-            origin_ratio: float = origin_size / input_size
+        working_copy = np.asarray(working_copy).astype(np.float32)
+        working_copy = np.transpose(working_copy, (2, 0, 1))  # RGB -> BRG
+        working_copy /= 255
 
-            img = origin_img.resize((input_size, input_size), resample=Image.NEAREST)
+        prediction = model.run(None, {input_name: working_copy[np.newaxis]})[0][0]
 
-            img_for_inf = np.asarray(img).astype(np.float32)
-            img_for_inf = np.transpose(img_for_inf, (2, 0, 1))  # RGB -> BRG
-            img_for_inf /= 255
+        # User: Roman Velichkin
+        # Published: Jan 20, 2025
+        # Title: Guide - How to interpet onnx predictions from detection model
+        # Link: https://github.com/orgs/ultralytics/discussions/18776
+        prediction = prediction.T
 
-            prediction = model.run(None, {input_name: img_for_inf[np.newaxis]})[0][0]
+        boxes = prediction[:, :4]
+        class_probs = prediction[:, 4]
 
-            # User: Roman Velichkin
-            # Published: Jan 20, 2025
-            # Title: Guide - How to interpet onnx predictions from detection model
-            # Link: https://github.com/orgs/ultralytics/discussions/18776
-            prediction = prediction.T
+        # TODO: Add non-maximum suppression (NMS)
+        max_class_prob = np.max(class_probs)
 
-            boxes = prediction[:, :4]
-            class_probs = prediction[:, 4]
+        if max_class_prob < threshold:
+            return 0, 0, 0, 0
 
-            # TODO: Add non-maximum suppression (NMS)
-            max_class_prob = np.max(class_probs)
+        [x, y, w, h] = boxes[class_probs == max_class_prob][0] / input_size
 
-            x: float = 0
-            y: float = 0
-            w: float = 0
-            h: float = 0
+        x -= (w / 2)
+        y -= (h / 2)
 
-            if max_class_prob > 0.25:
-                [x, y, w, h] = boxes[class_probs == max_class_prob][0]
+        x = max(x, 0)
+        y = max(y, 0)
+        w = w if x + w <= 1 else 1 - x
+        h = h if y + h <= 1 else 1 - y
 
-                if may_be_crop:
-                    cx = x * origin_ratio
-                    cy = y * origin_ratio
-                    cw = w * origin_ratio
-                    ch = h * origin_ratio
+        return x, y, w, h
 
-                    max_lesion_side = max(cw, ch)
-                    crop_size = math.ceil(max_lesion_side / input_size) * input_size
+    @staticmethod
+    def _find_crop_around(
+            lesion: tuple[float, float, float, float],
+            factor: float
+    ) -> tuple[float, float, float, float]:
+        """
+        Finds a relative crop [0, 1] around a detected lesion. The lesion will be centered within the crop. The final
+        crop size will be a multiple of the factor argument.
+        """
+        x, y, w, h = lesion
 
-                    if crop_size < origin_size:
-                        # https://github.com/microsoft/onnxruntime-extensions/blob/5c53aaad627d7cf4a8f25efcfde849da586cfe45/tutorials/yolov8_pose_e2e.py#L276
-                        cx -= (crop_size / 2)
-                        cy -= (crop_size / 2)
-                        cw = crop_size
-                        ch = crop_size
+        crop = math.ceil(max(w, h) / factor) * factor
 
-                        origin_img = origin_img.crop((cx, cy, cx + cw, cy + ch))
-                    else:
-                        may_be_crop = False
+        if crop >= 1:
+            return 0, 0, 0, 0
 
-                if not may_be_crop:
-                    x -= (w / 2)
-                    y -= (h / 2)
+        cx = max(x - (crop - w) / 2, 0)
+        cy = max(y - (crop - h) / 2, 0)
+        cw = crop if cx + crop <= 1 else 1 - crop
+        ch = crop if cy + crop <= 1 else 1 - crop
 
-            if not may_be_crop:
-                break
+        return cx, cy, cw, ch
 
-            if may_be_crop:
-                may_be_crop = False
+    @staticmethod
+    def _find_lesion_coordinates_within_crop(
+            crop: tuple[float, float, float, float],
+            lesion: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        """
+        Finds relative coordinates [0, 1] of a lesion within its surrounding crop.
+        """
+        cx, cy, cw, ch = crop
+        x, y, w, h = lesion
 
-        if w != 0:
-            x = max(x, 1)
-            y = max(y, 1)
-            w = min(w, origin_size - 1)
-            h = min(h, origin_size - 1)
+        nx = (x - cx) / cw
+        ny = (y - cy) / ch
+        nw = (x - cx + w) / cw - nx
+        nh = (y - cy + h) / ch - ny
 
-        return img, round(x), round(y), round(w), round(h)
+        return nx, ny, nw, nh
+
+    @staticmethod
+    def _to_relative_int_values(size: int, box: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
+        """
+        Converts relative float coordinates [0, 1] to relative int coordinates with respect to the size given
+        """
+        cx, cy, cw, ch = box
+        cx *= size
+        cy *= size
+        cw *= size
+        ch *= size
+
+        return round(cx), round(cy), round(cw), round(ch)
+
+    @staticmethod
+    def _to_absolute_int_values(size: int, box: tuple[float, float, float, float]) -> tuple[int, int, int, int]:
+        """
+        Converts relative float coordinates [0, 1] to absolute int coordinates with respect to the size given
+        """
+        cx, cy, cw, ch = box
+        cx *= size
+        cy *= size
+        cw *= size
+        ch *= size
+
+        return round(cx), round(cy), round(cx + cw), round(cy + ch)
+
+
+

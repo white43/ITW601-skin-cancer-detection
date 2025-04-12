@@ -56,7 +56,7 @@ class UploadFrame(ctk.CTkFrame):
                  cls_tasks: Queue[Image.Image],
                  cls_results: Queue[tuple[int, float]],
                  seg_tasks: Queue[Image.Image],
-                 seg_results: Queue[tuple[Image.Image, int, int, int, int]],
+                 seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]],
                  download_meter: Queue[tuple[int, int]],
                  **kwargs,
                  ):
@@ -67,7 +67,7 @@ class UploadFrame(ctk.CTkFrame):
         self.cls_tasks: Queue[Image.Image] = cls_tasks
         self.cls_results: Queue[tuple[int, float]] = cls_results
         self.seg_tasks: Queue[Image.Image] = seg_tasks
-        self.seg_results: Queue[tuple[Image.Image, int, int, int, int]] = seg_results
+        self.seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = seg_results
 
         self.original_image: Optional[Image.Image] = None
         self.segmented_image: Optional[Image.Image] = None
@@ -352,13 +352,9 @@ class UploadFrame(ctk.CTkFrame):
 
     def _draw_seg_inference_result(self):
         img: Image.Image | None = None
-        x0: int = 0
-        y0: int = 0
-        x1: int = 0
-        y1: int = 0
 
         try:
-            (img, x0, y0, x1, y1) = self.seg_results.get(timeout=15)
+            (img, lesion) = self.seg_results.get(timeout=15)
             self.seg_results.task_done()
         except Empty:
             CTkMessagebox(
@@ -370,11 +366,11 @@ class UploadFrame(ctk.CTkFrame):
 
         # Save square crop and box coordinates around a lesion
         self.segmented_image = img
-        self.lesion_box = (x0, y0, x1, y1)
+        self.lesion_box = lesion
 
-        if img is not None and x1 > 0:
+        if img is not None and lesion[2] > 0:
             ImageDraw.Draw(img).rectangle(
-                xy=(x0, y0, x1, y1),
+                xy=lesion,
                 outline=(0, 0, 0),
                 width=round(img.size[0] * 0.01),
             )
@@ -393,7 +389,7 @@ class UploadFrame(ctk.CTkFrame):
         if self.predict_class_button.cget("state") == tk.DISABLED:
             self.predict_class_button.configure(state=tk.NORMAL)
 
-        if y0 > 0:
+        if lesion[2] > 0:
             self.hint_label.configure(text="A lesion is found.")
         else:
             self.hint_label.configure(text="No lesion is found, but you can still try predicting")

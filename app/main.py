@@ -30,7 +30,8 @@ ctk.FontManager.load_font(resource_path("fonts", "Raleway-Regular.ttf"))
 cls_tasks: Queue[Image.Image] = Queue()
 cls_results: Queue[tuple[int, float]] = Queue()
 seg_tasks: Queue[Image.Image] = Queue()
-seg_results: Queue[tuple[Image.Image, int, int, int, int]] = Queue()
+# A queue for results of inference from the segmentation model: a square crop and lesion boundaries within the crop
+seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = Queue()
 # A queue for displaying current progress to users while models are being downloading
 download_meter: Queue[tuple[int, int]] = Queue()
 events = Events()
