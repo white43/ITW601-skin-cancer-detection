@@ -365,7 +365,7 @@ class UploadFrame(ctk.CTkFrame):
             )
 
         # Save square crop and box coordinates around a lesion
-        self.segmented_image = img
+        self.segmented_image = img.copy()
         self.lesion_box = lesion
 
         if img is not None and lesion[2] > 0:
