@@ -1,6 +1,5 @@
 import math
 import time
-from argparse import Namespace
 from queue import Queue
 from threading import Thread
 
@@ -8,18 +7,19 @@ import numpy as np
 from PIL import Image
 
 from .events import Events
+from .options import Options
 
 
 class ClassificationWorker(Thread):
     def __init__(self,
-                 options: Namespace,
+                 options: Options,
                  events: Events,
                  tasks: Queue[Image.Image],
                  results: Queue[tuple[int, float]],
                  ):
         Thread.__init__(self)
         self.events = events
-        self.options: Namespace = options
+        self.options: Options = options
         self.tasks: Queue[Image.Image] = tasks
         self.results: Queue[tuple[int, float]] = results
 
@@ -57,14 +57,14 @@ class ClassificationWorker(Thread):
 
 class SegmentationWorker(Thread):
     def __init__(self,
-                 options: Namespace,
+                 options: Options,
                  events: Events,
                  tasks: Queue[Image.Image],
                  results: Queue[tuple[Image.Image, tuple[int, int, int, int]]],
                  ):
         Thread.__init__(self)
         self.events = events
-        self.options: Namespace = options
+        self.options: Options = options
         self.tasks: Queue[Image.Image] = tasks
         self.results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = results
 

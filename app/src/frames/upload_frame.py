@@ -1,7 +1,6 @@
 import queue
 import time
 import tkinter as tk
-from argparse import Namespace
 from queue import Queue, Empty
 from threading import Thread
 from typing import Optional
@@ -13,6 +12,7 @@ from tkinterdnd2 import TkinterDnD, DND_FILES
 
 from ..events import Events
 from ..inference import ClassificationWorker, SegmentationWorker
+from ..options import Options
 from ..utils import resource_path
 
 LESION_TYPE_UNKNOWN = -1
@@ -51,7 +51,7 @@ LESION_TYPE_TEXT_DICT = {
 class UploadFrame(ctk.CTkFrame):
     def __init__(self,
                  master: ctk.CTk,
-                 options: Namespace,
+                 options: Options,
                  events: Events,
                  cls_tasks: Queue[Image.Image],
                  cls_results: Queue[tuple[int, float]],

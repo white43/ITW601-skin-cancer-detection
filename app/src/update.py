@@ -1,5 +1,4 @@
 import os
-from argparse import Namespace
 from queue import Queue
 
 import appdirs
@@ -7,9 +6,10 @@ import requests
 from CTkMessagebox import CTkMessagebox
 
 from app.src.events import Events
+from app.src.options import Options
 
 
-def download_models(options: Namespace, events: Events, meter: Queue[tuple[int, int]]) -> dict[str, str] | None:
+def download_models(options: Options, events: Events, meter: Queue[tuple[int, int]]) -> dict[str, str] | None:
     response = requests.get(options.download_from + "/models.json")
 
     if not response.ok:
@@ -60,7 +60,7 @@ def download_models(options: Namespace, events: Events, meter: Queue[tuple[int, 
 
 
 def _download_model(
-    options: Namespace,
+    options: Options,
     filename: str,
     dest: str,
     meter: Queue[tuple[int, int]],

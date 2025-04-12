@@ -8,6 +8,7 @@ from PIL import Image
 from app.src.app import App
 from app.src.events import Events
 from app.src.frames.upload_frame import UploadFrame
+from app.src.options import Options
 from app.src.overrides import Tk
 from app.src.update import download_models
 from app.src.utils import resource_path
@@ -18,8 +19,10 @@ ctk.set_default_color_theme("dark-blue")
 cli_opts = argparse.ArgumentParser()
 cli_opts.add_argument("--cls-model")
 cli_opts.add_argument("--seg-model")
-cli_opts.add_argument("--download-from", default="https://torrens-files.s3.ap-southeast-2.amazonaws.com/ITA602")
-options = cli_opts.parse_args()
+cli_opts.add_argument("--download-from")
+
+options = Options()
+cli_opts.parse_known_args(namespace=options)
 
 window = Tk()
 window.geometry("640x640")
