@@ -22,7 +22,7 @@ cli_opts.add_argument("--download-from", default="https://torrens-files.s3.ap-so
 options = cli_opts.parse_args()
 
 window = Tk()
-window.geometry("640x480")
+window.geometry("640x640")
 window.title("AI for Skin Cancer Detection")
 
 ctk.FontManager.load_font(resource_path("fonts", "Raleway-Regular.ttf"))

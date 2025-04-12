@@ -109,18 +109,18 @@ class UploadFrame(ctk.CTkFrame):
             master=self.master,
             text="",
             text_color="#333333",
-            height=224,
-            width=224,
+            height=448,
+            width=448,
             border_width=1,
             image=ctk.CTkImage(
                 light_image=self.dnd_light_img,
                 dark_image=self.dnd_dark_img,
-                size=(224, 224),
+                size=(448, 448),
             ),
             hover=False,
             fg_color="transparent",
         )
-        self.image_label.place(x=200, y=70)
+        self.image_label.place(x=91, y=70)
         self.image_label.drop_target_register(DND_FILES)
         self.image_label.dnd_bind('<<Drop>>', lambda e: self._update_frame_state_on_dnd(e))
 
@@ -129,10 +129,10 @@ class UploadFrame(ctk.CTkFrame):
             text="",
             font=("Raleway", 14),
             height=30,
-            width=264,
+            width=300,
             corner_radius=0,
         )
-        self.hint_label.place(x=190, y=300)
+        self.hint_label.place(x=172, y=530)
 
         self.find_lesion_button = ctk.CTkButton(
             master=self.master,
@@ -146,7 +146,7 @@ class UploadFrame(ctk.CTkFrame):
             state=tk.DISABLED,
             command=self._put_new_seg_task_to_queue,
         )
-        self.find_lesion_button.place(x=220, y=340)
+        self.find_lesion_button.place(x=220, y=565)
 
         self.predict_class_button = ctk.CTkButton(
             master=self.master,
@@ -160,7 +160,7 @@ class UploadFrame(ctk.CTkFrame):
             state=tk.DISABLED,
             command=self._put_new_cls_task_to_queue,
         )
-        self.predict_class_button.place(x=325, y=340)
+        self.predict_class_button.place(x=325, y=565)
 
         # By using this event we prevent errors in _wait_for_libraries_to_load due to fast ONNX loading
         self.events.ui_loaded.set()
@@ -265,7 +265,7 @@ class UploadFrame(ctk.CTkFrame):
             image=ctk.CTkImage(
                 light_image=img,
                 dark_image=img,
-                size=(224, 224),
+                size=(448, 448),
             ),
         )
 
@@ -338,7 +338,7 @@ class UploadFrame(ctk.CTkFrame):
                     image=ctk.CTkImage(
                         light_image=img,
                         dark_image=img,
-                        size=(224, 224),
+                        size=(448, 448),
                     ),
                 )
 
@@ -379,7 +379,7 @@ class UploadFrame(ctk.CTkFrame):
             image=ctk.CTkImage(
                 light_image=img,
                 dark_image=img,
-                size=(224, 224),
+                size=(448, 448),
             ),
         )
 
