@@ -41,7 +41,21 @@ class ClassificationWorker(Thread):
                     continue
 
                 img = img.resize((224, 224), resample=Image.NEAREST)
-                prediction = model.run(None, {"input_layer": np.asarray(img).astype(np.float32)[np.newaxis]})[0][0]
+
+                if "shades-of-grey" in self.options.cls_augmentations:
+                    from common.shades_of_grey import shades_of_grey
+
+                    sog = self.options.cls_augmentations["shades-of-grey"]
+
+                    img = shades_of_grey(
+                        img=np.array(img),
+                        norm_p=int(sog["norm_p"]) if "norm_p" in sog else 6,
+                    )
+
+                if isinstance(img, Image.Image):
+                    img = np.array(img)
+
+                prediction = model.run(None, {"input_layer": img.astype(np.float32)[np.newaxis]})[0][0]
                 label = int(np.argmax(prediction))
                 probability = float(prediction[label] * 100)
 
@@ -235,6 +249,3 @@ class SegmentationWorker(Thread):
         ch *= size
 
         return round(cx), round(cy), round(cx + cw), round(cy + ch)
-
-
-
