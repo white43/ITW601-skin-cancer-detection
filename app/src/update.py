@@ -54,6 +54,9 @@ def download_models(options: Options, events: Events, meter: Queue[tuple[int, in
     if seg_path is not None and not os.path.exists(seg_path):
         _download_model(options, latest["seg"]["file"], seg_path, meter, total_size)
 
+    if "augmentations" in latest["cls"]:
+        options.cls_augmentations = latest["cls"]["augmentations"]
+
     events.models_downloaded.set()
 
     return result
