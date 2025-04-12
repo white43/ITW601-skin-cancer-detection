@@ -282,7 +282,7 @@ class UploadFrame(ctk.CTkFrame):
             thread.start()
             self.threads.append(thread)
 
-            self.cls_tasks.put(self.segmented_image)
+            self.cls_tasks.put(self.segmented_image.copy())
 
     def _put_new_seg_task_to_queue(self):
         if self.find_lesion_button.cget("state") == tk.NORMAL:
@@ -293,7 +293,7 @@ class UploadFrame(ctk.CTkFrame):
             thread.start()
             self.threads.append(thread)
 
-            self.seg_tasks.put(self.original_image)
+            self.seg_tasks.put(self.original_image.copy())
 
     def _draw_cls_inference_result(self):
         label: int = -1
