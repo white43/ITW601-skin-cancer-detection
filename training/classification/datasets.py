@@ -170,11 +170,11 @@ def get_train_dataset(
         ))
 
     if options.thin_plate_spline:
-        dynamic.append(A.ThinPlateSpline(interpolation=INTERPOLATIONS[options.resize_interpolation]))
+        dynamic.append(A.ThinPlateSpline(interpolation=INTERPOLATIONS[options.transform_interpolation]))
 
     if options.rotate > 0:
         dynamic.append(A.Affine(rotate=(-options.rotate, options.rotate),
-                                interpolation=INTERPOLATIONS[options.resize_interpolation]))
+                                interpolation=INTERPOLATIONS[options.transform_interpolation]))
 
     if options.grid_dropout:
         dynamic.append(A.GridDropout(random_offset=True))
@@ -274,7 +274,7 @@ def get_test_dataset(
         augmentations.append(ShadesOfGrey(norm_p=6, always_apply=True))
 
     if options.thin_plate_spline:
-        augmentations.append(A.ThinPlateSpline(interpolation=INTERPOLATIONS[options.resize_interpolation]))
+        augmentations.append(A.ThinPlateSpline(interpolation=INTERPOLATIONS[options.transform_interpolation]))
 
     # Apply simple transformations
     transform = Transform(A.Compose(augmentations), shape, labels)
