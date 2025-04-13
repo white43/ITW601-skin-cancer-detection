@@ -5,6 +5,7 @@ from queue import Queue, Empty
 from threading import Thread
 from typing import Optional
 
+import numpy as np
 import customtkinter as ctk
 from CTkMessagebox import CTkMessagebox
 from PIL import Image, ImageDraw
@@ -53,8 +54,6 @@ class UploadFrame(ctk.CTkFrame):
                  master: ctk.CTk,
                  options: Options,
                  events: Events,
-                 cls_tasks: Queue[Image.Image],
-                 cls_results: Queue[tuple[int, float]],
                  seg_tasks: Queue[Image.Image],
                  seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]],
                  download_meter: Queue[tuple[int, int]],
@@ -63,9 +62,10 @@ class UploadFrame(ctk.CTkFrame):
         super().__init__(master, **kwargs)
 
         self.master: ctk.CTk = master
+        self.options: Options = options
         self.events: Events = events
-        self.cls_tasks: Queue[Image.Image] = cls_tasks
-        self.cls_results: Queue[tuple[int, float]] = cls_results
+        self.cls_task_queues: dict[str, Queue[Image.Image]] = {}
+        self.cls_result_queues: dict[str, Queue[list[float, ...]]] = {}
         self.seg_tasks: Queue[Image.Image] = seg_tasks
         self.seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = seg_results
 
@@ -83,10 +83,6 @@ class UploadFrame(ctk.CTkFrame):
 
         self.threads: list[Thread] = []
 
-        thread = ClassificationWorker(options, events, cls_tasks, cls_results)
-        thread.start()
-        self.threads.append(thread)
-
         thread = SegmentationWorker(options, events, seg_tasks, seg_results)
         thread.start()
         self.threads.append(thread)
@@ -96,6 +92,10 @@ class UploadFrame(ctk.CTkFrame):
         self.threads.append(thread)
 
         thread = Thread(target=self._wait_for_libraries_to_load)
+        thread.start()
+        self.threads.append(thread)
+
+        thread = Thread(target=self._spawn_cls_workers)
         thread.start()
         self.threads.append(thread)
 
@@ -198,6 +198,26 @@ class UploadFrame(ctk.CTkFrame):
             except Empty:
                 time.sleep(0.05)
 
+    def _spawn_cls_workers(self):
+        """
+        For every model specified in config, a separate worker (thread) and a communication queue will be spawned
+        """
+        self.events.models_downloaded.wait(1800.0)
+
+        for model in self.options.cls_models:
+            # Each classification worker has its own queue for tasks
+            self.cls_task_queues[model.name] = Queue()
+            self.cls_result_queues[model.name] = Queue()
+
+            thread = ClassificationWorker(
+                model=model,
+                events=self.events,
+                tasks=self.cls_task_queues[model.name],
+                results=self.cls_result_queues[model.name]
+            )
+            thread.start()
+            self.threads.append(thread)
+
     def _update_frame_state_on_dnd(self, e: TkinterDnD.DnDEvent) -> None:
         filepath = str(e.data)
 
@@ -294,7 +314,10 @@ class UploadFrame(ctk.CTkFrame):
             thread.start()
             self.threads.append(thread)
 
-            self.cls_tasks.put(self.segmented_image.copy())
+            # Send our image to  every known model through its own queue
+            for model in self.options.cls_models:
+                if model.name in self.cls_task_queues:
+                    self.cls_task_queues[model.name].put(self.segmented_image.copy())
 
     def _put_new_seg_task_to_queue(self):
         if self.find_lesion_button.cget("state") == tk.NORMAL:
@@ -308,12 +331,19 @@ class UploadFrame(ctk.CTkFrame):
             self.seg_tasks.put(self.original_image.copy())
 
     def _draw_cls_inference_result(self):
-        label: int = -1
-        probability: float = -1.0
+        probabilities: list[list[float, ...]] = []
+        stddev: float = 0.0
 
         try:
-            label, probability = self.cls_results.get(timeout=15)
-            self.cls_results.task_done()
+            for result_queue in self.cls_result_queues.values():
+                probabilities.append(result_queue.get(timeout=15))
+                result_queue.task_done()
+
+            probabilities: np.ndarray = np.array(probabilities)
+            label = np.argmax(np.sum(probabilities, axis=0))
+            stddev = np.std(probabilities[:, label]) * 100
+            probabilities = np.sum(probabilities, axis=0) / len(self.cls_task_queues)
+            probability = probabilities[label] * 100
         except Empty:
             CTkMessagebox(
                 icon="warning",
@@ -321,6 +351,9 @@ class UploadFrame(ctk.CTkFrame):
                 message="Timeout while waiting for results",
                 font=("Raleway", 14)
             )
+
+            label = -1
+            probability = -1.0
 
         if label in LESION_TYPE_DICT:
             binary_label = LESION_TYPE_DICT[label]
@@ -335,9 +368,14 @@ class UploadFrame(ctk.CTkFrame):
         if binary_label == LESION_TYPE_UNKNOWN:
             self.hint_label.configure(text="I am not sure what it is...")
         else:
-            self.hint_label.configure(text="It is %s (%s, %.0f%%)" % (binary_label_text, LESION_CLASSES[label], probability))
+            if stddev > 0:
+                hint = "It is %s (%s, %.0f±%.0f%%)" % (binary_label_text, LESION_CLASSES[label], probability, stddev)
+            else:
+                hint = "It is %s (%s, %.0f%%)" % (binary_label_text, LESION_CLASSES[label], probability)
 
-            if self.lesion_box[1] > 0:
+            self.hint_label.configure(text=hint)
+
+            if self.lesion_box[2] > 0:
                 img = self.segmented_image.copy()
 
                 ImageDraw.Draw(img).rectangle(
@@ -421,6 +459,3 @@ class UploadFrame(ctk.CTkFrame):
             t.join()
 
         super().destroy()
-
-
-

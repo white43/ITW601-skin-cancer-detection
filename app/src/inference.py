@@ -1,4 +1,5 @@
 import math
+import os.path
 import time
 from queue import Queue
 from threading import Thread
@@ -7,21 +8,21 @@ import numpy as np
 from PIL import Image
 
 from .events import Events
-from .options import Options
+from .options import Options, ClsModel
 
 
 class ClassificationWorker(Thread):
     def __init__(self,
-                 options: Options,
+                 model: ClsModel,
                  events: Events,
                  tasks: Queue[Image.Image],
-                 results: Queue[tuple[int, float]],
+                 results: Queue[list[float, ...]],
                  ):
-        Thread.__init__(self)
+        Thread.__init__(self, name=os.path.basename(model.name))
+        self.model: ClsModel = model
         self.events = events
-        self.options: Options = options
         self.tasks: Queue[Image.Image] = tasks
-        self.results: Queue[tuple[int, float]] = results
+        self.results: Queue[list[float, ...]] = results
 
     def run(self):
         # Moving inference off the main thread
@@ -30,7 +31,7 @@ class ClassificationWorker(Thread):
         # Wait for models to be downloaded from S3
         self.events.models_downloaded.wait(1800.0)
 
-        model = ort.InferenceSession(self.options.cls_model)
+        model = ort.InferenceSession(self.model.name)
         self.events.cls_runtime_loaded.set()
 
         while True:
@@ -42,10 +43,10 @@ class ClassificationWorker(Thread):
 
                 img = img.resize((224, 224), resample=Image.NEAREST)
 
-                if "shades-of-grey" in self.options.cls_augmentations:
+                if "shades-of-grey" in self.model.augmentations:
                     from common.shades_of_grey import shades_of_grey
 
-                    sog = self.options.cls_augmentations["shades-of-grey"]
+                    sog = self.model.augmentations["shades-of-grey"]
 
                     img = shades_of_grey(
                         img=np.array(img),
@@ -56,11 +57,9 @@ class ClassificationWorker(Thread):
                     img = np.array(img)
 
                 prediction = model.run(None, {"input_layer": img.astype(np.float32)[np.newaxis]})[0][0]
-                label = int(np.argmax(prediction))
-                probability = float(prediction[label] * 100)
 
                 self.tasks.task_done()
-                self.results.put((label, probability))
+                self.results.put(prediction.tolist())
             else:
                 time.sleep(0.05)
 

@@ -6,10 +6,10 @@ import requests
 from CTkMessagebox import CTkMessagebox
 
 from app.src.events import Events
-from app.src.options import Options
+from app.src.options import Options, ClsModel
 
 
-def download_models(options: Options, events: Events, meter: Queue[tuple[int, int]]) -> dict[str, str] | None:
+def download_models(options: Options, events: Events, meter: Queue[tuple[int, int]]):
     response = requests.get(options.download_from + "/models.json")
 
     if not response.ok:
@@ -29,37 +29,34 @@ def download_models(options: Options, events: Events, meter: Queue[tuple[int, in
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir, mode=0o755)
 
-    cls_path: str | None = None
-    seg_path: str | None = None
-    result: dict[str, str] = dict()
+    to_download: list[str] = []
     total_size: int = 0
-
-    if not options.cls_model and "cls" in latest:
-        cls_path = os.path.join(cache_dir, latest["cls"]["file"])
-        options.cls_model = cls_path
-
-        if not os.path.exists(cls_path):
-            total_size += int(latest["cls"]["size"])
 
     if not options.seg_model and "seg" in latest:
         seg_path = os.path.join(cache_dir, latest["seg"]["file"])
         options.seg_model = seg_path
 
         if not os.path.exists(seg_path):
+            to_download.append(latest["seg"]["file"])
             total_size += int(latest["seg"]["size"])
 
-    if cls_path is not None and not os.path.exists(cls_path):
-        _download_model(options, latest["cls"]["file"], cls_path, meter, total_size)
+    if "cls" in latest:
+        for cls_model in latest["cls"]:
+            cls_path = os.path.join(cache_dir, cls_model["file"])
 
-    if seg_path is not None and not os.path.exists(seg_path):
-        _download_model(options, latest["seg"]["file"], seg_path, meter, total_size)
+            options.cls_models.append(ClsModel(
+                name=cls_path,
+                augmentations=cls_model["augmentations"] if "augmentations" in cls_model else {},
+            ))
 
-    if "augmentations" in latest["cls"]:
-        options.cls_augmentations = latest["cls"]["augmentations"]
+            if not os.path.exists(cls_path):
+                to_download.append(cls_model["file"])
+                total_size += int(cls_model["size"])
+
+    for model in to_download:
+        _download_model(options, model, os.path.join(cache_dir, model), meter, total_size)
 
     events.models_downloaded.set()
-
-    return result
 
 
 def _download_model(

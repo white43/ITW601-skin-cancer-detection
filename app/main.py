@@ -30,8 +30,6 @@ window.title("AI for Skin Cancer Detection")
 
 ctk.FontManager.load_font(resource_path("fonts", "Raleway-Regular.ttf"))
 
-cls_tasks: Queue[Image.Image] = Queue()
-cls_results: Queue[tuple[int, float]] = Queue()
 seg_tasks: Queue[Image.Image] = Queue()
 # A queue for results of inference from the segmentation model: a square crop and lesion boundaries within the crop
 seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = Queue()
@@ -43,7 +41,7 @@ events = Events()
 downloading = Thread(target=lambda: download_models(options, events, download_meter), name="download_models")
 downloading.start()
 
-upload_frame = UploadFrame(window, options, events, cls_tasks, cls_results, seg_tasks, seg_results, download_meter)
+upload_frame = UploadFrame(window, options, events, seg_tasks, seg_results, download_meter)
 app = App(upload_frame)
 
 
