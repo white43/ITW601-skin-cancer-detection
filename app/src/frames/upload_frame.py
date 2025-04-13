@@ -269,9 +269,21 @@ class UploadFrame(ctk.CTkFrame):
             ),
         )
 
-        self.find_lesion_button.configure(state=tk.NORMAL)
-        self.predict_class_button.configure(state=tk.DISABLED)
-        self.hint_label.configure(text="Waiting for analysis")
+        def _activate_buttons():
+            self.find_lesion_button.configure(state=tk.NORMAL)
+            self.predict_class_button.configure(state=tk.DISABLED)
+            self.hint_label.configure(text="Waiting for analysis")
+
+        if self.events.models_downloaded.is_set():
+            _activate_buttons()
+        else:
+            def _wait_for_the_moment_to_activate_buttons():
+                self.events.models_downloaded.wait(1800.0)
+                _activate_buttons()
+
+            thread = Thread(target=_wait_for_the_moment_to_activate_buttons)
+            thread.start()
+            self.threads.append(thread)
 
     def _put_new_cls_task_to_queue(self):
         if self.find_lesion_button.cget("state") == tk.NORMAL:
