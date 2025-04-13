@@ -61,7 +61,8 @@ class QuickEvaluation(Evaluation):
         _, ds = get_test_dataset(options, get_input_shape_for(options.model), LABELS)
 
         model_class = keras.models.load_model(model_path)
-        model_class.compile(metrics=[CategoricalCrossentropy(name='loss'), MeanRecall(num_labels=len(LABELS))])
+        model_class.compile(metrics=[CategoricalCrossentropy(name='loss'), MeanRecall(num_labels=len(LABELS)),
+                                     keras.metrics.AUC(name="auc")])
         model_class.evaluate(ds)
 
 
@@ -83,7 +84,8 @@ class ComprehensiveEvaluation(Evaluation):
         files, ds = get_test_dataset(opts, get_input_shape_for(options.model), LABELS)
 
         model_class = keras.models.load_model(model_path)
-        model_class.compile(metrics=[CategoricalCrossentropy(name='loss'), MeanRecall(num_labels=len(LABELS))])
+        model_class.compile(metrics=[CategoricalCrossentropy(name='loss'), MeanRecall(num_labels=len(LABELS)),
+                                     keras.metrics.AUC(name="auc")])
 
         ds = tf.data.Dataset.zip(files, ds).as_numpy_iterator()
         length = len(files)
