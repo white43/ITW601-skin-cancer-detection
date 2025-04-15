@@ -43,9 +43,9 @@ LESION_TYPE_DICT = {
 }
 
 LESION_TYPE_TEXT_DICT = {
-    -1: "unknown",
-    0: "benign",
-    1: "malignant",
+    -1: "Unknown",
+    0: "Benign",
+    1: "Malignant",
 }
 
 
@@ -120,7 +120,7 @@ class UploadFrame(ctk.CTkFrame):
             hover=False,
             fg_color="transparent",
         )
-        self.image_label.place(x=91, y=70)
+        self.image_label.place(x=91, y=50)
         self.image_label.drop_target_register(DND_FILES)
         self.image_label.dnd_bind('<<Drop>>', lambda e: self._update_frame_state_on_dnd(e))
 
@@ -128,11 +128,11 @@ class UploadFrame(ctk.CTkFrame):
             master=self.master,
             text="",
             font=("Raleway", 14),
-            height=30,
+            height=60,
             width=300,
             corner_radius=0,
         )
-        self.hint_label.place(x=172, y=530)
+        self.hint_label.place(x=172, y=510)
 
         self.find_lesion_button = ctk.CTkButton(
             master=self.master,
@@ -146,7 +146,7 @@ class UploadFrame(ctk.CTkFrame):
             state=tk.DISABLED,
             command=self._put_new_seg_task_to_queue,
         )
-        self.find_lesion_button.place(x=220, y=565)
+        self.find_lesion_button.place(x=220, y=575)
 
         self.predict_class_button = ctk.CTkButton(
             master=self.master,
@@ -160,7 +160,7 @@ class UploadFrame(ctk.CTkFrame):
             state=tk.DISABLED,
             command=self._put_new_cls_task_to_queue,
         )
-        self.predict_class_button.place(x=325, y=565)
+        self.predict_class_button.place(x=325, y=575)
 
         # By using this event we prevent errors in _wait_for_libraries_to_load due to fast ONNX loading
         self.events.ui_loaded.set()
@@ -332,18 +332,11 @@ class UploadFrame(ctk.CTkFrame):
 
     def _draw_cls_inference_result(self):
         probabilities: list[list[float, ...]] = []
-        stddev: float = 0.0
 
         try:
             for result_queue in self.cls_result_queues.values():
                 probabilities.append(result_queue.get(timeout=15))
                 result_queue.task_done()
-
-            probabilities: np.ndarray = np.array(probabilities)
-            label = np.argmax(np.sum(probabilities, axis=0))
-            stddev = np.std(probabilities[:, label]) * 100
-            probabilities = np.sum(probabilities, axis=0) / len(self.cls_task_queues)
-            probability = probabilities[label] * 100
         except Empty:
             CTkMessagebox(
                 icon="warning",
@@ -352,45 +345,57 @@ class UploadFrame(ctk.CTkFrame):
                 font=("Raleway", 14)
             )
 
-            label = -1
-            probability = -1.0
+        hint: str = ""
+        first_binary_label: Optional[int] = None
 
-        if label in LESION_TYPE_DICT:
-            binary_label = LESION_TYPE_DICT[label]
-        else:
-            binary_label = LESION_TYPE_UNKNOWN
+        probabilities: np.ndarray = np.array(probabilities)
+        probabilities_sum = np.sum(probabilities, axis=0)
+        top3_labels = np.argsort(probabilities_sum)[-3:]
+        probabilities_sum /= len(self.cls_task_queues)
 
-        if binary_label in LESION_TYPE_TEXT_DICT:
-            binary_label_text = LESION_TYPE_TEXT_DICT[binary_label]
-        else:
-            binary_label_text = LESION_TYPE_TEXT_DICT[LESION_TYPE_UNKNOWN]
+        for label in reversed(top3_labels):
+            probability = probabilities_sum[label] * 100
+            stddev = np.std(probabilities[:, label]) * 100
 
-        if binary_label == LESION_TYPE_UNKNOWN:
-            self.hint_label.configure(text="I am not sure what it is...")
-        else:
-            if stddev > 0:
-                hint = "It is %s (%s, %.0f±%.0f%%)" % (binary_label_text, LESION_CLASSES[label], probability, stddev)
+            if label in LESION_TYPE_DICT:
+                binary_label = LESION_TYPE_DICT[label]
             else:
-                hint = "It is %s (%s, %.0f%%)" % (binary_label_text, LESION_CLASSES[label], probability)
+                binary_label = LESION_TYPE_UNKNOWN
 
-            self.hint_label.configure(text=hint)
+            if binary_label in LESION_TYPE_TEXT_DICT:
+                binary_label_text = LESION_TYPE_TEXT_DICT[binary_label]
+            else:
+                binary_label_text = LESION_TYPE_TEXT_DICT[LESION_TYPE_UNKNOWN]
 
-            if self.lesion_box[2] > 0:
-                img = self.segmented_image.copy()
+            if first_binary_label is None:
+                first_binary_label = binary_label
 
-                ImageDraw.Draw(img).rectangle(
-                    xy=self.lesion_box,
-                    outline=(255, 0, 0) if binary_label == LESION_TYPE_MALIGNANT else (0, 255, 0),
-                    width=round(img.size[0] * 0.01),
-                )
+            if hint:
+                hint += "\n"
 
-                self.image_label.configure(
-                    image=ctk.CTkImage(
-                        light_image=img,
-                        dark_image=img,
-                        size=(448, 448),
-                    ),
-                )
+            hint += "%s (%s, %.0f±%.0f%%)" % (binary_label_text, LESION_CLASSES[label], probability, stddev)
+
+        if hint == "":
+            hint = "Oops. I am not sure what it is..."
+
+        self.hint_label.configure(text=hint)
+
+        if self.lesion_box[2] > 0:
+            img = self.segmented_image.copy()
+
+            ImageDraw.Draw(img).rectangle(
+                xy=self.lesion_box,
+                outline=(255, 0, 0) if first_binary_label == LESION_TYPE_MALIGNANT else (0, 255, 0),
+                width=round(img.size[0] * 0.01),
+            )
+
+            self.image_label.configure(
+                image=ctk.CTkImage(
+                    light_image=img,
+                    dark_image=img,
+                    size=(448, 448),
+                ),
+            )
 
         if self.find_lesion_button.cget("state") == tk.DISABLED:
             self.find_lesion_button.configure(state=tk.NORMAL)
