@@ -273,9 +273,6 @@ def get_test_dataset(
     if options.shades_of_grey:
         augmentations.append(ShadesOfGrey(norm_p=6, always_apply=True))
 
-    if options.thin_plate_spline:
-        augmentations.append(A.ThinPlateSpline(interpolation=INTERPOLATIONS[options.transform_interpolation]))
-
     # Apply simple transformations
     transform = Transform(A.Compose(augmentations), shape, labels)
 
