@@ -4,3 +4,12 @@
 build
 dist
 wandb
+
+*.keras
+*.zip
+*.pdf
+*.jpg
+*.png
+*.csv
+*.yaml
+*.txt
