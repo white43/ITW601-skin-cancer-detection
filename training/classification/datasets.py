@@ -172,6 +172,11 @@ def get_train_dataset(
     if options.thin_plate_spline:
         dynamic.append(A.ThinPlateSpline(interpolation=INTERPOLATIONS[options.transform_interpolation]))
 
+    if options.scale > 0:
+        scale = 1 + options.scale
+        dynamic.append(A.Affine(scale=(1 / scale, scale), balanced_scale=True,
+                                interpolation=INTERPOLATIONS[options.transform_interpolation]))
+
     if options.rotate > 0:
         dynamic.append(A.Affine(rotate=(-options.rotate, options.rotate),
                                 interpolation=INTERPOLATIONS[options.transform_interpolation]))
