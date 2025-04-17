@@ -133,7 +133,7 @@ def get_train_dataset(
     # The list of augmentations that will be applied to images before caching
     static: list[Union[BasicTransform, BaseCompose]] = []
 
-    if options.shades_of_grey:
+    if options.shades_of_grey and not options.dataset.endswith("-sog"):
         static.append(ShadesOfGrey(norm_p=6, always_apply=True))
 
     if static:
@@ -234,7 +234,7 @@ def get_val_dataset(
         A.Resize(shape[0], shape[1], interpolation=INTERPOLATIONS[options.resize_interpolation]),  # cv2.INTER_CUBIC
     ]
 
-    if options.shades_of_grey:
+    if options.shades_of_grey and not options.dataset.endswith("-sog"):
         augmentations.append(ShadesOfGrey(norm_p=6, always_apply=True))
 
     # Apply simple dimensional transformations
@@ -275,7 +275,7 @@ def get_test_dataset(
         A.Resize(shape[0], shape[1], interpolation=INTERPOLATIONS[options.resize_interpolation]),
     ]
 
-    if options.shades_of_grey:
+    if options.shades_of_grey and not options.dataset.endswith("-sog"):
         augmentations.append(ShadesOfGrey(norm_p=6, always_apply=True))
 
     # Apply simple transformations
