@@ -59,7 +59,7 @@ class UploadFrame(ctk.CTkFrame):
                  options: Options,
                  events: Events,
                  seg_tasks: Queue[Image.Image],
-                 seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]],
+                 seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]],
                  download_meter: Queue[tuple[int, int]],
                  **kwargs,
                  ):
@@ -71,11 +71,12 @@ class UploadFrame(ctk.CTkFrame):
         self.cls_task_queues: dict[str, Queue[Image.Image]] = {}
         self.cls_result_queues: dict[str, Queue[list[float, ...]]] = {}
         self.seg_tasks: Queue[Image.Image] = seg_tasks
-        self.seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = seg_results
+        self.seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]] = seg_results
 
         self.original_image: Optional[Image.Image] = None
         self.segmented_image: Optional[Image.Image] = None
         self.lesion_box: Optional[tuple[int, int, int, int]] = None
+        self.mask: Optional[np.ndarray] = None
         self.polygon_vertices: list[tuple[int, int]] = []
 
         self.dnd_light_img = Image.open(resource_path("dnd-light.png"))
@@ -541,9 +542,10 @@ class UploadFrame(ctk.CTkFrame):
     def _draw_seg_inference_result(self):
         img: Optional[Image.Image] = None
         lesion: Optional[tuple[int, int, int, int]] = None
+        mask: Optional[np.ndarray] = None
 
         try:
-            (img, lesion) = self.seg_results.get(timeout=15)
+            (img, lesion, mask) = self.seg_results.get(timeout=15)
             self.seg_results.task_done()
         except Empty:
             CTkMessagebox(
@@ -556,6 +558,7 @@ class UploadFrame(ctk.CTkFrame):
         # Save square crop and box coordinates around a lesion
         self.segmented_image = img.copy()
         self.lesion_box = lesion
+        self.mask = mask
         self.polygon_vertices = []
 
         if img is not None and lesion[2] > 0:

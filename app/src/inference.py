@@ -73,13 +73,13 @@ class SegmentationWorker(Thread):
                  options: Options,
                  events: Events,
                  tasks: Queue[Image.Image],
-                 results: Queue[tuple[Image.Image, tuple[int, int, int, int]]],
+                 results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]],
                  ):
         Thread.__init__(self)
         self.events = events
         self.options: Options = options
         self.tasks: Queue[Image.Image] = tasks
-        self.results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = results
+        self.results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]] = results
 
     def run(self):
         # Moving inference off the main thread
@@ -99,12 +99,12 @@ class SegmentationWorker(Thread):
                 if not isinstance(img, Image.Image):
                     continue
 
-                rel_lesion_float = self._run_inference(model, img, 0.25)
+                rel_lesion_float, mask = self._run_inference(model, img, 0.5)
 
                 # No lesion has been found
                 if rel_lesion_float[2] == 0 or rel_lesion_float[3] == 0:
                     self.tasks.task_done()
-                    self.results.put((img, (0, 0, 0, 0)))
+                    self.results.put((img, (0, 0, 0, 0), np.zeros(0)))
                     continue
 
                 rel_crop_float = self._find_crop_around(rel_lesion_float, 224 / img.size[0])
@@ -112,7 +112,7 @@ class SegmentationWorker(Thread):
                 # A lesion has been found but no crop needed
                 if rel_crop_float[2] == 0 or rel_crop_float[3] == 0:
                     self.tasks.task_done()
-                    self.results.put((img, self._to_absolute_int_values(img.size[0], rel_lesion_float)))
+                    self.results.put((img, self._to_absolute_int_values(img.size[0], rel_lesion_float), mask))
                     continue
 
                 rel_lesion_float = self._find_lesion_coordinates_within_crop(rel_crop_float, rel_lesion_float)
@@ -121,7 +121,7 @@ class SegmentationWorker(Thread):
                 abs_lesion_int = self._to_absolute_int_values(rel_crop_int[2], rel_lesion_float)
 
                 self.tasks.task_done()
-                self.results.put((img.crop(abs_crop_int), abs_lesion_int))
+                self.results.put((img.crop(abs_crop_int), abs_lesion_int, mask))
             else:
                 time.sleep(0.05)
 
@@ -130,7 +130,7 @@ class SegmentationWorker(Thread):
                 break
 
     @staticmethod
-    def _run_inference(model, image: Image.Image, threshold: float) -> tuple[float, float, float, float]:
+    def _run_inference(model, image: Image.Image, threshold: float) -> tuple[tuple[float, float, float, float], np.ndarray]:
         """
         Runs inference on the image argument against the model argument. Threshold represents the level of confidence.
         The result will be in a relative form [0, 1] with respect to the original image.
@@ -154,18 +154,55 @@ class SegmentationWorker(Thread):
         working_copy /= 255
 
         prediction = model.run(None, {input_name: working_copy[np.newaxis]})
-        [x0, y0, x1, y1] = prediction[0][0][:, :4][0] / input_size
-        probability = prediction[0][0][:, 4][0]
+
+        # Here is the full list of steps need to be taken to process prediction for exported to ONNX models
+        # 1. https://github.com/ultralytics/ultralytics/blob/bdfac623ddb1683f2298069f2efab998871dcc58/ultralytics/engine/predictor.py#L325
+        #    At this step we have a list with two(?) elements: (1, 300, 38) and (1, 32, 160, 160). Since YOLO models
+        #    are being exported with built-in NMS (via nms=True), we need to take only the first row from both matrices.
+        #    Columns 0-3 contain XYXY coordinates in a range [0, input_size]. Column 4 contains probability in a range
+        #    [0, 1].
+        [x0, y0, x1, y1] = prediction[0][0, :, :4][0]
+        probability = prediction[0][0, :, 4][0]
 
         if probability < threshold:
-            return 0, 0, 0, 0
+            return (0, 0, 0, 0), np.zeros(0)
 
-        x = max(x0, 0)
-        y = max(y0, 0)
-        w = min(x1 - x0, 1)
-        h = min(y1 - y0, 1)
+        mask_ratio: float = input_size / 160
 
-        return x, y, w, h
+        # 2. https://github.com/ultralytics/ultralytics/blob/bdfac623ddb1683f2298069f2efab998871dcc58/ultralytics/engine/predictor.py#L332
+        #    Here the postprocessing starts.
+        # 3. https://github.com/ultralytics/ultralytics/blob/bdfac623ddb1683f2298069f2efab998871dcc58/ultralytics/models/yolo/segment/predict.py#L48-L67
+        #    At this step we separate the list into to distinct elements: preds and protos (0th and 1st elements)
+        # 4. https://github.com/ultralytics/ultralytics/blob/bdfac623ddb1683f2298069f2efab998871dcc58/ultralytics/models/yolo/detect/predict.py#L33-L69
+        #    Apply NMS if needed to preds
+        # 5. https://github.com/ultralytics/ultralytics/blob/bdfac623ddb1683f2298069f2efab998871dcc58/ultralytics/models/yolo/segment/predict.py#L69-L85
+        #    Iterate over predictions
+        # 6. https://github.com/ultralytics/ultralytics/blob/bdfac623ddb1683f2298069f2efab998871dcc58/ultralytics/models/yolo/segment/predict.py#L88-L113
+        #    Each prediction is a (1, 32) matrix and each proto is (32, 160, 160) matrix. Next, we need to carry out
+        #    matrix multiplication and get a new matrix of shape (160, 160).
+        pred = prediction[0][0, 0, 6:].reshape(1, -1) # (1, 32)
+        proto = prediction[1][0].reshape(32, -1) # (32, 160, 160)
+        matrix: np.ndarray = np.matmul(pred, proto).reshape(160, 160) # (32, 25600) -> (160, 160)
+
+        # 7. https://github.com/ultralytics/ultralytics/blob/bdfac623ddb1683f2298069f2efab998871dcc58/ultralytics/utils/ops.py#L661-L677
+        #    Here we need to get rid of noise around bounding boxes (hmm, there a lot of noise, actually). This
+        #    operation filters out everything outside bounding boxes.
+        r = np.arange(matrix.shape[1], dtype=x1.dtype)[None, :]
+        c = np.arange(matrix.shape[0], dtype=x1.dtype)[:, None]
+        matrix *= ((r >= x0 / mask_ratio) * (r < x1 / mask_ratio) * (c >= y0 / mask_ratio) * (c < y1 / mask_ratio))
+
+        # Convert XYXY to normalized XYHW
+        x = max(x0, 0) / input_size
+        y = max(y0, 0) / input_size
+        w = min(x1 - x0, input_size) / input_size
+        h = min(y1 - y0, input_size) / input_size
+
+        # Resize binary mask to the original image's size.
+        i = Image.fromarray(matrix > 0)
+        i = i.resize((original_size, original_size), resample=Image.BILINEAR)
+        mask: np.ndarray = np.array(i)
+
+        return (x, y, w, h), mask
 
     @staticmethod
     def _find_crop_around(

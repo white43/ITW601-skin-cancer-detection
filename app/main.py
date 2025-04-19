@@ -3,6 +3,7 @@ from queue import Queue
 from threading import Thread
 
 import customtkinter as ctk
+import numpy as np
 from PIL import Image
 
 from app.src.app import App
@@ -32,7 +33,7 @@ ctk.FontManager.load_font(resource_path("fonts", "Raleway-Regular.ttf"))
 
 seg_tasks: Queue[Image.Image] = Queue()
 # A queue for results of inference from the segmentation model: a square crop and lesion boundaries within the crop
-seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int]]] = Queue()
+seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]] = Queue()
 # A queue for displaying current progress to users while models are being downloading
 download_meter: Queue[tuple[int, int]] = Queue()
 events = Events()
