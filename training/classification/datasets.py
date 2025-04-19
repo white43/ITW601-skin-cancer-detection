@@ -1,15 +1,36 @@
 import os
-from typing import Union
+from typing import Union, Optional
 
+from PIL import Image
 import albumentations as A
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from albumentations import BasicTransform, BaseCompose
 
-from training.classification.constants import INTERPOLATIONS, DATASET_SIZE, CROP_SIZE
+from training.classification.constants import INTERPOLATIONS, CROP_SIZE, LABELS
 from training.classification.options import Options
 from training.classification.shades_of_grey import ShadesOfGrey
+
+# A dynamically created tuple of image sizes in the given dataset. Populated during the first call of
+# get_dataset_image_dimensions().
+DATASET_SIZE: Optional[tuple[int, int]] = None
+
+def populate_dataset_size_from_files(options: Options) -> tuple[int, int]:
+    global DATASET_SIZE
+
+    if DATASET_SIZE is not None:
+        return DATASET_SIZE
+
+    directory = os.path.join(options.dataset, "train", LABELS[0])
+
+    for filename in os.listdir(directory):
+        if filename.endswith(".jpg"):
+            with Image.open(os.path.join(directory, filename)) as img:
+                DATASET_SIZE = (img.size[1], img.size[0])
+                return DATASET_SIZE
+
+    raise Exception("No JPG images found in %s directory" % directory)
 
 
 def get_class_weights(dataset: tf.data.Dataset, labels: list[str]) -> dict[int, float]:
@@ -120,6 +141,7 @@ def get_train_dataset(
     """
     ds_train = tf.data.Dataset.list_files(os.path.join(options.dataset, "train", '*', '*'), shuffle=True)
     ds_len = len(ds_train)  # The number of images can be obtained before calling batch(N)
+    populate_dataset_size_from_files(options)
 
     # Take a slice of data
     if 0 < options.portion < 1:
@@ -143,10 +165,13 @@ def get_train_dataset(
         )
 
     # The list of augmentations that will be applied to images after caching
-    dynamic: list[Union[BasicTransform, BaseCompose]] = [
-        A.RandomCrop(CROP_SIZE, CROP_SIZE),
-        A.Resize(shape[0], shape[1], interpolation=INTERPOLATIONS[options.resize_interpolation]),
-    ]
+    dynamic: list[Union[BasicTransform, BaseCompose]] = []
+
+    if shape[:2] != DATASET_SIZE:
+        dynamic += [
+            A.RandomCrop(CROP_SIZE, CROP_SIZE),
+            A.Resize(height=shape[0], width=shape[1], interpolation=INTERPOLATIONS[options.resize_interpolation]),
+        ]
 
     if options.d4 is True:
         dynamic.append(A.D4())
@@ -221,6 +246,7 @@ def get_val_dataset(
     """
     ds_val = tf.data.Dataset.list_files(os.path.join(options.dataset, "val", '*', '*'), shuffle=True)
     ds_len = len(ds_val)  # The number of images can be known before calling batch(N)
+    populate_dataset_size_from_files(options)
 
     # Take a slice of data
     if 0 < options.portion < 1:
@@ -229,10 +255,13 @@ def get_val_dataset(
     # Load images and their labels from directories
     ds_val = ds_val.map(lambda x: load_image_and_labels(x, labels))
 
-    augmentations: list[Union[BasicTransform, BaseCompose]] = [
-        A.CenterCrop(CROP_SIZE, CROP_SIZE),
-        A.Resize(shape[0], shape[1], interpolation=INTERPOLATIONS[options.resize_interpolation]),  # cv2.INTER_CUBIC
-    ]
+    augmentations: list[Union[BasicTransform, BaseCompose]] = []
+
+    if shape[:2] != DATASET_SIZE:
+        augmentations += [
+            A.CenterCrop(CROP_SIZE, CROP_SIZE),
+            A.Resize(height=shape[0], width=shape[1], interpolation=INTERPOLATIONS[options.resize_interpolation]),
+        ]
 
     if options.shades_of_grey and not options.dataset.endswith("-sog"):
         augmentations.append(ShadesOfGrey(norm_p=6, always_apply=True))
@@ -266,14 +295,18 @@ def get_test_dataset(
     """
     ds_test = tf.data.Dataset.list_files(os.path.join(options.dataset, "val", '*', '*'), shuffle=False)
     ds_files = ds_test.batch(options.batch)
+    populate_dataset_size_from_files(options)
 
     # Load images and their labels from directories
     ds_test = ds_test.map(lambda x: load_image_and_labels(x, labels))
 
-    augmentations: list[Union[BasicTransform, BaseCompose]] = [
-        A.CenterCrop(CROP_SIZE, CROP_SIZE),
-        A.Resize(shape[0], shape[1], interpolation=INTERPOLATIONS[options.resize_interpolation]),
-    ]
+    augmentations: list[Union[BasicTransform, BaseCompose]] = []
+
+    if shape[:2] != DATASET_SIZE:
+        augmentations += [
+            A.CenterCrop(CROP_SIZE, CROP_SIZE),
+            A.Resize(height=shape[0], width=shape[1], interpolation=INTERPOLATIONS[options.resize_interpolation]),
+        ]
 
     if options.shades_of_grey and not options.dataset.endswith("-sog"):
         augmentations.append(ShadesOfGrey(norm_p=6, always_apply=True))

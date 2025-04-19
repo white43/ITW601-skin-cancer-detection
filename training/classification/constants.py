@@ -3,9 +3,6 @@ import cv2
 # Available labels in ISIC2018 dataset
 LABELS = ["MEL", "NV", "BCC", "AKIEC", "BKL", "DF", "VASC"]
 
-# ISIC2018 image size
-DATASET_SIZE = (450, 600)
-
 # Initial crop size that is carried out before downscaling images to 224 pixels
 CROP_SIZE = 448
 
