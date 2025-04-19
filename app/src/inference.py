@@ -153,32 +153,17 @@ class SegmentationWorker(Thread):
         working_copy = np.transpose(working_copy, (2, 0, 1))  # RGB -> BRG
         working_copy /= 255
 
-        prediction = model.run(None, {input_name: working_copy[np.newaxis]})[0][0]
+        prediction = model.run(None, {input_name: working_copy[np.newaxis]})
+        [x0, y0, x1, y1] = prediction[0][0][:, :4][0] / input_size
+        probability = prediction[0][0][:, 4][0]
 
-        # User: Roman Velichkin
-        # Published: Jan 20, 2025
-        # Title: Guide - How to interpet onnx predictions from detection model
-        # Link: https://github.com/orgs/ultralytics/discussions/18776
-        prediction = prediction.T
-
-        boxes = prediction[:, :4]
-        class_probs = prediction[:, 4]
-
-        # TODO: Add non-maximum suppression (NMS)
-        max_class_prob = np.max(class_probs)
-
-        if max_class_prob < threshold:
+        if probability < threshold:
             return 0, 0, 0, 0
 
-        [x, y, w, h] = boxes[class_probs == max_class_prob][0] / input_size
-
-        x -= (w / 2)
-        y -= (h / 2)
-
-        x = max(x, 0)
-        y = max(y, 0)
-        w = w if x + w <= 1 else 1 - x
-        h = h if y + h <= 1 else 1 - y
+        x = max(x0, 0)
+        y = max(y0, 0)
+        w = min(x1 - x0, 1)
+        h = min(y1 - y0, 1)
 
         return x, y, w, h
 
