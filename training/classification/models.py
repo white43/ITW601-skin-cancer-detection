@@ -1,6 +1,7 @@
 import keras
 import tensorflow as tf
 from keras.regularizers import L2
+from keras.src.applications.efficientnet_v2 import EfficientNetV2
 
 from training.classification.constants import INPUT_SIZES
 from training.classification.options import Options
@@ -10,10 +11,10 @@ def get_input_shape_for(code: str) -> tuple[int, int, int]:
     return INPUT_SIZES[code], INPUT_SIZES[code], 3
 
 def get_model(options: Options, labels: int) -> keras.Model:
-    if options.weights == "imagenet":
-        model = get_transfer_learning_model(options, labels)
+    if options.weights == "imagenet" or options.weights is None:
+        model = get_imagenet_or_random_model(options, labels)
     else:
-        model = get_fine_tuning_model(options)
+        model = get_self_trained_model(options)
 
     unfreeze_layers(model, options, target=0)
 
@@ -58,7 +59,7 @@ def unfreeze_layers(model: keras.Model, options: Options, target: float) -> None
     # The layers added on top of the feature extractor should be trainable regardless of options
     assert model.trainable is True
 
-def get_transfer_learning_model(options: Options, labels: int) -> keras.Model:
+def get_imagenet_or_random_model(options: Options, labels: int) -> keras.Model:
     # The very first layer (input layer)
     inputs = keras.layers.Input(shape=get_input_shape_for(options.model), name='input_layer')
 
@@ -68,7 +69,7 @@ def get_transfer_learning_model(options: Options, labels: int) -> keras.Model:
     if options.model == "efficientnetv2-b0":
         # Blocks:
         # 6th: 13+15+15+15+15+15+15+18 = 121 layer
-        backbone = keras.src.applications.efficientnet_v2.EfficientNetV2(
+        backbone = EfficientNetV2(
             # Default values for keras.applications.EfficientNetV2B0
             width_coefficient=1.0,
             depth_coefficient=1.0,
@@ -87,7 +88,7 @@ def get_transfer_learning_model(options: Options, labels: int) -> keras.Model:
 
             # Custom values
             include_top=False,
-            weights="imagenet",
+            weights=options.weights,
             input_shape=get_input_shape_for(options.model),
         )
     elif options.model == "efficientnetv2-s":
@@ -161,5 +162,5 @@ def get_transfer_learning_model(options: Options, labels: int) -> keras.Model:
 
     return keras.Model(inputs, outputs)
 
-def get_fine_tuning_model(options: Options) -> keras.Model:
+def get_self_trained_model(options: Options) -> keras.Model:
     return keras.models.load_model(options.weights)
