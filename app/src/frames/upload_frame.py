@@ -1,6 +1,9 @@
+import math
 import queue
 import time
 import tkinter as tk
+from io import BytesIO
+import cairosvg
 from queue import Queue, Empty
 from threading import Thread
 from typing import Optional
@@ -11,6 +14,7 @@ from CTkMessagebox import CTkMessagebox
 from PIL import Image, ImageDraw
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
+from training.classification.constants import CROP_SIZE
 from ..events import Events
 from ..inference import ClassificationWorker, SegmentationWorker
 from ..options import Options
@@ -72,14 +76,27 @@ class UploadFrame(ctk.CTkFrame):
         self.original_image: Optional[Image.Image] = None
         self.segmented_image: Optional[Image.Image] = None
         self.lesion_box: Optional[tuple[int, int, int, int]] = None
+        self.polygon_vertices: list[tuple[int, int]] = []
 
         self.dnd_light_img = Image.open(resource_path("dnd-light.png"))
         self.dnd_dark_img = Image.open(resource_path("dnd-dark.png"))
+
+        # User: Alberto Vassena
+        # Published: 23 Jul 2017
+        # Title: PIL and vectorbased graphics
+        # Link: https://stackoverflow.com/a/45262575
+        out = BytesIO()
+        cairosvg.svg2png(url=resource_path("clear-polygon-normal.svg"), write_to=out)
+        self.polygon_img_normal = Image.open(out)
+        out = BytesIO()
+        cairosvg.svg2png(url=resource_path("clear-polygon-disabled.svg"), write_to=out)
+        self.polygon_img_disabled = Image.open(out)
 
         self.image_label: Optional[ctk.CTkButton] = None
         self.find_lesion_button: Optional[ctk.CTkButton] = None
         self.predict_class_button: Optional[ctk.CTkButton] = None
         self.hint_label: Optional[ctk.CTkLabel] = None
+        self.clear_polygon_label: Optional[ctk.CTkLabel] = None
 
         self.threads: list[Thread] = []
 
@@ -123,6 +140,7 @@ class UploadFrame(ctk.CTkFrame):
         self.image_label.place(x=91, y=50)
         self.image_label.drop_target_register(DND_FILES)
         self.image_label.dnd_bind('<<Drop>>', lambda e: self._update_frame_state_on_dnd(e))
+        self.image_label.bind('<Button 1>', self._handle_click_on_image)
 
         self.hint_label = ctk.CTkLabel(
             master=self.master,
@@ -162,8 +180,132 @@ class UploadFrame(ctk.CTkFrame):
         )
         self.predict_class_button.place(x=325, y=575)
 
+        self.clear_polygon_label = ctk.CTkButton(
+            master=self.master,
+            text="",
+            height=30,
+            width=30,
+            border_width=1,
+            image=ctk.CTkImage(
+                light_image=self.polygon_img_disabled,
+                dark_image=self.polygon_img_disabled,
+                size=(30, 30),
+            ),
+            hover=False,
+            state=ctk.DISABLED,
+            fg_color="transparent",
+            command=self._clear_polygon,
+        )
+        self.clear_polygon_label.place(x=560, y=50)
+
         # By using this event we prevent errors in _wait_for_libraries_to_load due to fast ONNX loading
         self.events.ui_loaded.set()
+
+    # User: Taku
+    # Published: 27 Feb 2017
+    # Title: Tkinter get mouse coordinates on click and use them as variables
+    # Link: https://stackoverflow.com/a/42494066
+    def _handle_click_on_image(self, eventorigin):
+        x0 = eventorigin.x
+        y0 = eventorigin.y
+
+        x0 = math.ceil(x0 / CROP_SIZE * self.segmented_image.size[0])
+        y0 = math.ceil(y0 / CROP_SIZE * self.segmented_image.size[1])
+
+        self.polygon_vertices.append((x0, y0))
+        self._display_polygon(LESION_TYPE_UNKNOWN)
+        self._enable_clear_polygon_button()
+
+    def _display_polygon(self, malignant: int) -> None:
+        rgba1 = self.segmented_image.copy().convert('RGBA')
+        rgba2 = Image.new('RGBA', self.segmented_image.size)
+        canvas = ImageDraw.Draw(rgba2)
+
+        if malignant == LESION_TYPE_MALIGNANT:
+            fill_color = (255, 0, 0, 64)
+            circle_color = (255, 0, 0, 255)
+        elif malignant == LESION_TYPE_BENIGN:
+            fill_color = (0, 255, 0, 64)
+            circle_color = (0, 255, 0, 255)
+        else:
+            fill_color = (255, 214, 35, 64)
+            circle_color = (255, 214, 35)
+
+        if len(self.polygon_vertices) > 5:
+            canvas.polygon(self.polygon_vertices, fill=fill_color)
+
+        for i, (x, y) in enumerate(self.polygon_vertices):
+            radius = self.segmented_image.size[0] * 0.01
+            width = round(self.segmented_image.size[0] * 0.005)
+
+            canvas.circle(
+                xy=(x, y),
+                radius=radius,
+                fill=(33, 33, 33, 255),
+                outline=circle_color,
+                width=width if width > 0 else 1,
+            )
+
+        img = Image.alpha_composite(rgba1, rgba2)
+
+        self.image_label.configure(
+            image=ctk.CTkImage(
+                light_image=img,
+                dark_image=img,
+                size=(448, 448),
+            ),
+        )
+
+    def _display_rectangle(self, malignant: int) -> None:
+        img = self.segmented_image.copy()
+
+        if malignant == LESION_TYPE_MALIGNANT:
+            color = (255, 0, 0)
+        elif malignant == LESION_TYPE_BENIGN:
+            color = (0, 255, 0)
+        else:
+            color = (0, 0, 0)
+
+        ImageDraw.Draw(img).rectangle(
+            xy=self.lesion_box,
+            outline=color,
+            width=round(img.size[0] * 0.005),
+        )
+
+        self.image_label.configure(
+            image=ctk.CTkImage(
+                light_image=img,
+                dark_image=img,
+                size=(448, 448),
+            ),
+        )
+
+    def _clear_polygon(self):
+        self.polygon_vertices = []
+        self._display_polygon(LESION_TYPE_UNKNOWN)
+        self._disable_clear_polygon_button()
+
+    def _enable_clear_polygon_button(self):
+        self.clear_polygon_label.configure(
+            state=ctk.NORMAL,
+            hover=True,
+            image=ctk.CTkImage(
+                light_image=self.polygon_img_normal,
+                dark_image=self.polygon_img_normal,
+                size=(30, 30),
+            ),
+        )
+
+    def _disable_clear_polygon_button(self):
+        self.clear_polygon_label.configure(
+            state=ctk.DISABLED,
+            hover=False,
+            image=ctk.CTkImage(
+                light_image=self.polygon_img_disabled,
+                dark_image=self.polygon_img_disabled,
+                size=(30, 30),
+            ),
+        )
 
     def _wait_for_libraries_to_load(self):
         if (
@@ -280,6 +422,9 @@ class UploadFrame(ctk.CTkFrame):
                 img = img.crop((0, upper_offset, orig_width, upper_offset + orig_width))
 
         self.original_image = img
+        self.segmented_image = None
+        self.lesion_box = []
+        self.polygon_vertices = []
 
         self.image_label.configure(
             image=ctk.CTkImage(
@@ -380,22 +525,10 @@ class UploadFrame(ctk.CTkFrame):
 
         self.hint_label.configure(text=hint)
 
-        if self.lesion_box[2] > 0:
-            img = self.segmented_image.copy()
-
-            ImageDraw.Draw(img).rectangle(
-                xy=self.lesion_box,
-                outline=(255, 0, 0) if first_binary_label == LESION_TYPE_MALIGNANT else (0, 255, 0),
-                width=round(img.size[0] * 0.01),
-            )
-
-            self.image_label.configure(
-                image=ctk.CTkImage(
-                    light_image=img,
-                    dark_image=img,
-                    size=(448, 448),
-                ),
-            )
+        if self.polygon_vertices:
+            self._display_polygon(first_binary_label)
+        elif self.lesion_box[2] > 0:
+            self._display_rectangle(first_binary_label)
 
         if self.find_lesion_button.cget("state") == tk.DISABLED:
             self.find_lesion_button.configure(state=tk.NORMAL)
@@ -406,7 +539,8 @@ class UploadFrame(ctk.CTkFrame):
         self.thread_gc()
 
     def _draw_seg_inference_result(self):
-        img: Image.Image | None = None
+        img: Optional[Image.Image] = None
+        lesion: Optional[tuple[int, int, int, int]] = None
 
         try:
             (img, lesion) = self.seg_results.get(timeout=15)
@@ -422,12 +556,13 @@ class UploadFrame(ctk.CTkFrame):
         # Save square crop and box coordinates around a lesion
         self.segmented_image = img.copy()
         self.lesion_box = lesion
+        self.polygon_vertices = []
 
         if img is not None and lesion[2] > 0:
             ImageDraw.Draw(img).rectangle(
                 xy=lesion,
                 outline=(0, 0, 0),
-                width=round(img.size[0] * 0.01),
+                width=round(img.size[0] * 0.005),
             )
 
         self.image_label.configure(
