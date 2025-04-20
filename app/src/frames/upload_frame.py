@@ -21,6 +21,7 @@ from training.classification.constants import CROP_SIZE
 from ..events import Events
 from ..inference import ClassificationWorker, SegmentationWorker
 from ..options import Options
+from ..polygon import centroid, circularity
 from ..utils import resource_path
 
 LESION_TYPE_UNKNOWN = -1
@@ -101,6 +102,8 @@ class UploadFrame(ctk.CTkFrame):
         self.predict_class_button: Optional[ctk.CTkButton] = None
         self.hint_label: Optional[ctk.CTkLabel] = None
         self.clear_polygon_label: Optional[ctk.CTkLabel] = None
+        self.circularity_label: Optional[ctk.CTkLabel] = None
+        self.circularity_label_value: Optional[ctk.CTkLabel] = None
 
         self.threads: list[Thread] = []
 
@@ -200,7 +203,24 @@ class UploadFrame(ctk.CTkFrame):
             fg_color="transparent",
             command=self._clear_polygon,
         )
-        self.clear_polygon_label.place(x=560, y=50)
+        self.clear_polygon_label.place(x=568, y=50)
+
+        self.circularity_label = ctk.CTkLabel(
+            master=self.master,
+            text="Circularity:",
+            height=20,
+            width=70,
+            font=("Raleway", 14)
+        )
+        self.circularity_label_value = ctk.CTkLabel(
+            master=self.master,
+            text="0.00",
+            height=15,
+            width=70,
+            font=("Raleway", 14),
+        )
+        self.circularity_label.place(x=557, y=100)
+        self.circularity_label_value.place(x=557, y=120)
 
         # By using this event we prevent errors in _wait_for_libraries_to_load due to fast ONNX loading
         self.events.ui_loaded.set()
@@ -228,15 +248,25 @@ class UploadFrame(ctk.CTkFrame):
         if malignant == LESION_TYPE_MALIGNANT:
             fill_color = (255, 0, 0, 64)
             circle_color = (255, 0, 0, 255)
+            centroid_color = (255, 0, 0, 255)
         elif malignant == LESION_TYPE_BENIGN:
             fill_color = (0, 255, 0, 64)
             circle_color = (0, 255, 0, 255)
+            centroid_color = (0, 255, 0, 255)
         else:
             fill_color = (255, 214, 35, 64)
             circle_color = (255, 214, 35)
+            centroid_color = (255, 214, 35, 255)
 
-        if len(self.polygon_vertices) > 5:
+        if len(self.polygon_vertices) >= 3:
             canvas.polygon(self.polygon_vertices, fill=fill_color)
+
+            xc, yc = centroid(self.polygon_vertices)
+
+            if xc >= 5 and yc >= 5:
+                width = round(self.segmented_image.size[0] * 0.01)
+                canvas.line((xc, yc - width*3, xc, yc + width*3), fill=centroid_color, width=width)
+                canvas.line((xc - width*3, yc, xc + width*3, yc), fill=centroid_color, width=width)
 
         for i, (x, y) in enumerate(self.polygon_vertices):
             radius = self.segmented_image.size[0] * 0.01
@@ -259,6 +289,11 @@ class UploadFrame(ctk.CTkFrame):
                 size=(448, 448),
             ),
         )
+
+        self._circularity_label(circularity(self.polygon_vertices))
+
+    def _circularity_label(self, c: float):
+        self.circularity_label_value.configure(text="%0.2f" % c)
 
     def _display_rectangle(self, malignant: int) -> None:
         img = self.segmented_image.copy()
