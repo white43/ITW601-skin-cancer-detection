@@ -3,6 +3,7 @@ import os.path
 import time
 from queue import Queue
 from threading import Thread
+from typing import Optional
 
 import numpy as np
 from PIL import Image
@@ -73,13 +74,13 @@ class SegmentationWorker(Thread):
                  options: Options,
                  events: Events,
                  tasks: Queue[Image.Image],
-                 results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]],
+                 results: Queue[tuple[Image.Image, tuple[int, int, int, int], Optional[np.ndarray]]],
                  ):
         Thread.__init__(self)
         self.events = events
         self.options: Options = options
         self.tasks: Queue[Image.Image] = tasks
-        self.results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]] = results
+        self.results: Queue[tuple[Image.Image, tuple[int, int, int, int], Optional[np.ndarray]]] = results
 
     def run(self):
         # Moving inference off the main thread
@@ -99,12 +100,12 @@ class SegmentationWorker(Thread):
                 if not isinstance(img, Image.Image):
                     continue
 
-                rel_lesion_float, mask = self._run_inference(model, img, 0.5)
+                rel_lesion_float, mask = self._run_inference(model, img, box_threshold=0.25, mask_threshold=0.5)
 
                 # No lesion has been found
                 if rel_lesion_float[2] == 0 or rel_lesion_float[3] == 0:
                     self.tasks.task_done()
-                    self.results.put((img, (0, 0, 0, 0), np.zeros(0)))
+                    self.results.put((img, (0, 0, 0, 0), mask))
                     continue
 
                 rel_crop_float = self._find_crop_around(rel_lesion_float, 224 / img.size[0])
@@ -120,6 +121,9 @@ class SegmentationWorker(Thread):
                 abs_crop_int = self._to_absolute_int_values(img.size[0], rel_crop_float)
                 abs_lesion_int = self._to_absolute_int_values(rel_crop_int[2], rel_lesion_float)
 
+                if mask is not None and rel_crop_int[2] < mask.shape[0]:
+                    mask = mask[abs_crop_int[1]:abs_crop_int[3], abs_crop_int[0]:abs_crop_int[2]]
+
                 self.tasks.task_done()
                 self.results.put((img.crop(abs_crop_int), abs_lesion_int, mask))
             else:
@@ -130,7 +134,8 @@ class SegmentationWorker(Thread):
                 break
 
     @staticmethod
-    def _run_inference(model, image: Image.Image, threshold: float) -> tuple[tuple[float, float, float, float], np.ndarray]:
+    def _run_inference(model, image: Image.Image, box_threshold: float, mask_threshold: float) -> tuple[
+        tuple[float, float, float, float], Optional[np.ndarray]]:
         """
         Runs inference on the image argument against the model argument. Threshold represents the level of confidence.
         The result will be in a relative form [0, 1] with respect to the original image.
@@ -164,10 +169,19 @@ class SegmentationWorker(Thread):
         [x0, y0, x1, y1] = prediction[0][0, :, :4][0]
         probability = prediction[0][0, :, 4][0]
 
-        if probability < threshold:
-            return (0, 0, 0, 0), np.zeros(0)
+        if probability < box_threshold:
+            return (0, 0, 0, 0), None
 
         mask_ratio: float = input_size / 160
+
+        # Convert XYXY to normalized XYHW
+        x = max(x0, 0) / input_size
+        y = max(y0, 0) / input_size
+        w = min(x1 - x0, input_size) / input_size
+        h = min(y1 - y0, input_size) / input_size
+
+        if probability < mask_threshold:
+            return (x, y, w, h), None
 
         # 2. https://github.com/ultralytics/ultralytics/blob/bdfac623ddb1683f2298069f2efab998871dcc58/ultralytics/engine/predictor.py#L332
         #    Here the postprocessing starts.
@@ -191,16 +205,10 @@ class SegmentationWorker(Thread):
         c = np.arange(matrix.shape[0], dtype=x1.dtype)[:, None]
         matrix *= ((r >= x0 / mask_ratio) * (r < x1 / mask_ratio) * (c >= y0 / mask_ratio) * (c < y1 / mask_ratio))
 
-        # Convert XYXY to normalized XYHW
-        x = max(x0, 0) / input_size
-        y = max(y0, 0) / input_size
-        w = min(x1 - x0, input_size) / input_size
-        h = min(y1 - y0, input_size) / input_size
-
         # Resize binary mask to the original image's size.
         i = Image.fromarray(matrix > 0)
         i = i.resize((original_size, original_size), resample=Image.BILINEAR)
-        mask: np.ndarray = np.array(i)
+        mask: np.ndarray = np.array(i).astype(np.uint8) * 255
 
         return (x, y, w, h), mask
 

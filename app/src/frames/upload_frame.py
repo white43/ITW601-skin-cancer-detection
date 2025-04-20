@@ -3,11 +3,14 @@ import queue
 import time
 import tkinter as tk
 from io import BytesIO
+from operator import itemgetter
+
 import cairosvg
 from queue import Queue, Empty
 from threading import Thread
 from typing import Optional
 
+import cv2
 import numpy as np
 import customtkinter as ctk
 from CTkMessagebox import CTkMessagebox
@@ -59,7 +62,7 @@ class UploadFrame(ctk.CTkFrame):
                  options: Options,
                  events: Events,
                  seg_tasks: Queue[Image.Image],
-                 seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]],
+                 seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int], Optional[np.ndarray]]],
                  download_meter: Queue[tuple[int, int]],
                  **kwargs,
                  ):
@@ -71,7 +74,7 @@ class UploadFrame(ctk.CTkFrame):
         self.cls_task_queues: dict[str, Queue[Image.Image]] = {}
         self.cls_result_queues: dict[str, Queue[list[float, ...]]] = {}
         self.seg_tasks: Queue[Image.Image] = seg_tasks
-        self.seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int], np.ndarray]] = seg_results
+        self.seg_results: Queue[tuple[Image.Image, tuple[int, int, int, int], Optional[np.ndarray]]] = seg_results
 
         self.original_image: Optional[Image.Image] = None
         self.segmented_image: Optional[Image.Image] = None
@@ -561,20 +564,21 @@ class UploadFrame(ctk.CTkFrame):
         self.mask = mask
         self.polygon_vertices = []
 
-        if img is not None and lesion[2] > 0:
-            ImageDraw.Draw(img).rectangle(
-                xy=lesion,
-                outline=(0, 0, 0),
-                width=round(img.size[0] * 0.005),
-            )
+        contours, _  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        self.image_label.configure(
-            image=ctk.CTkImage(
-                light_image=img,
-                dark_image=img,
-                size=(448, 448),
-            ),
-        )
+        if len(contours) > 0:
+            # Sort objects by the number of vertices in descendant order
+            # TODO What to do with other contours? Should we display them all?
+            contours = sorted(contours, key=lambda x: x.shape[0], reverse=True)
+
+            for point in contours[0].reshape(-1, 2).tolist():
+                self.polygon_vertices.append(tuple(point))
+
+            self._display_polygon(LESION_TYPE_UNKNOWN)
+            self._enable_clear_polygon_button()
+        elif lesion[2] > 0:
+            self._display_rectangle(LESION_TYPE_UNKNOWN)
+            self._disable_clear_polygon_button()
 
         if self.find_lesion_button.cget("state") == tk.DISABLED:
             self.find_lesion_button.configure(state=tk.NORMAL)
