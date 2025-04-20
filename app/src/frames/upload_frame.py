@@ -105,6 +105,22 @@ class UploadFrame(ctk.CTkFrame):
         self.circularity_label: Optional[ctk.CTkLabel] = None
         self.circularity_label_value: Optional[ctk.CTkLabel] = None
 
+        # Diameter-related images, controls, and variables
+        self.diameter_measure_mode: bool = False
+        self.clicks: list[tuple[int, int]] = []
+        self.clicks_needed: int = 3
+
+        out = BytesIO()
+        cairosvg.svg2png(url=resource_path("scale-normal.svg"), write_to=out)
+        self.diameter_img_normal = Image.open(out)
+        out = BytesIO()
+        cairosvg.svg2png(url=resource_path("scale-disabled.svg"), write_to=out)
+        self.diameter_img_disabled = Image.open(out)
+
+        self.diameter_button: Optional[ctk.CTkLabel] = None
+        self.diameter_label: Optional[ctk.CTkLabel] = None
+        self.diameter_label_value: Optional[ctk.CTkLabel] = None
+
         self.threads: list[Thread] = []
 
         thread = SegmentationWorker(options, events, seg_tasks, seg_results)
@@ -222,8 +238,49 @@ class UploadFrame(ctk.CTkFrame):
         self.circularity_label.place(x=557, y=100)
         self.circularity_label_value.place(x=557, y=120)
 
+        self.diameter_button = ctk.CTkButton(
+            master=self.master,
+            text="",
+            height=30,
+            width=30,
+            border_width=1,
+            image=ctk.CTkImage(
+                light_image=self.diameter_img_disabled,
+                dark_image=self.diameter_img_disabled,
+                size=(30, 30),
+            ),
+            hover=False,
+            state=ctk.NORMAL,
+            fg_color="transparent",
+            command=self._handle_diameter_button_click,
+        )
+        self.diameter_button.place(x=568, y=150)
+
+        self.diameter_label = ctk.CTkLabel(
+            master=self.master,
+            text="Diameter:",
+            height=20,
+            width=70,
+            font=("Raleway", 14)
+        )
+        self.diameter_label_value = ctk.CTkLabel(
+            master=self.master,
+            text="0.0 mm",
+            height=15,
+            width=70,
+            font=("Raleway", 14),
+        )
+        self.diameter_label.place(x=557, y=190)
+        self.diameter_label_value.place(x=557, y=210)
+
         # By using this event we prevent errors in _wait_for_libraries_to_load due to fast ONNX loading
         self.events.ui_loaded.set()
+
+    def _reset_all_buttons(self):
+        self.find_lesion_button.configure(state=tk.NORMAL)
+        self.predict_class_button.configure(state=tk.DISABLED)
+        self._disable_clear_polygon_button()
+        self._disable_diameter_button()
 
     # User: Taku
     # Published: 27 Feb 2017
@@ -236,9 +293,17 @@ class UploadFrame(ctk.CTkFrame):
         x0 = math.ceil(x0 / CROP_SIZE * self.segmented_image.size[0])
         y0 = math.ceil(y0 / CROP_SIZE * self.segmented_image.size[1])
 
-        self.polygon_vertices.append((x0, y0))
-        self._display_polygon(LESION_TYPE_UNKNOWN)
-        self._enable_clear_polygon_button()
+        if self.diameter_measure_mode:
+            self.clicks.append((x0, y0))
+            self.diameter_label_value.configure(text='%d/%d' % (len(self.clicks), self.clicks_needed))
+
+            if len(self.clicks) == self.clicks_needed:
+                diameter = self._measure_lesion_diameter()
+                self._deactivate_diameter_mode(diameter)
+        else:
+            self.polygon_vertices.append((x0, y0))
+            self._display_polygon(LESION_TYPE_UNKNOWN)
+            self._enable_clear_polygon_button()
 
     def _display_polygon(self, malignant: int) -> None:
         rgba1 = self.segmented_image.copy().convert('RGBA')
@@ -345,6 +410,77 @@ class UploadFrame(ctk.CTkFrame):
                 size=(30, 30),
             ),
         )
+
+        self.circularity_label_value.configure(text='0.00')
+
+    # ------------------------ #
+    # DIAMETER-RELATED METHODS #
+    # ------------------------ #
+
+    def _handle_diameter_button_click(self):
+        if not self.diameter_measure_mode:
+            self._activate_diameter_mode()
+
+    def _measure_lesion_diameter(self) -> float:
+        mm1 = math.sqrt((self.clicks[1][0] - self.clicks[0][0]) ** 2 + (self.clicks[1][1] - self.clicks[0][1]) ** 2)
+        mm2 = math.sqrt((self.clicks[2][0] - self.clicks[1][0]) ** 2 + (self.clicks[2][1] - self.clicks[1][1]) ** 2)
+        mm = (mm1 + mm2) / 2
+
+        candidates = []
+
+        for v1 in self.polygon_vertices:
+            for v2 in self.polygon_vertices:
+                if v1 != v2:
+                    candidates.append((v1[0], v1[1], v2[0], v2[1]))
+
+        # TODO Thanks to numpy, we can significantly speed up calculation of n^2 number of pairs of vertices. This,
+        #  however, needs to be replaced by Graham's scan and Shamos's algorithm
+        #  https://en.wikipedia.org/wiki/Graham_scan
+        #  https://en.wikipedia.org/wiki/Rotating_calipers#Shamos's_algorithm
+        candidates = np.array(candidates)
+        distances = np.sqrt((candidates[:, 0] - candidates[:, 2]) ** 2 + (candidates[:, 1] - candidates[:, 3]) ** 2)
+        diameter = np.max(distances) / mm
+
+        return diameter
+
+    def _enable_diameter_button(self):
+        self.diameter_button.configure(
+            state=ctk.NORMAL,
+            hover=True,
+            image=ctk.CTkImage(
+                light_image=self.diameter_img_normal,
+                dark_image=self.diameter_img_normal,
+                size=(30, 30),
+            ),
+        )
+
+        self.diameter_label.configure(text='Diameter:')
+        self.diameter_label_value.configure(text='0 mm')
+
+    def _activate_diameter_mode(self):
+        self.diameter_measure_mode = True
+        self.diameter_label.configure(text='Points:')
+        self.diameter_label_value.configure(text='%d/%d' % (len(self.clicks), self.clicks_needed))
+
+    def _deactivate_diameter_mode(self, diameter: float):
+        self.diameter_measure_mode = False
+        self.diameter_label.configure(text='Diameter:')
+        self.diameter_label_value.configure(text='%.0f mm' % diameter)
+        self.clicks = []
+
+    def _disable_diameter_button(self):
+        self.diameter_button.configure(
+            state=ctk.DISABLED,
+            hover=False,
+            image=ctk.CTkImage(
+                light_image=self.diameter_img_disabled,
+                dark_image=self.diameter_img_disabled,
+                size=(30, 30),
+            ),
+        )
+
+        self.diameter_label.configure(text='Diameter:')
+        self.diameter_label_value.configure(text='0 mm')
 
     def _wait_for_libraries_to_load(self):
         if (
@@ -472,6 +608,8 @@ class UploadFrame(ctk.CTkFrame):
                 size=(448, 448),
             ),
         )
+
+        self._reset_all_buttons()
 
         def _activate_buttons():
             self.find_lesion_button.configure(state=tk.NORMAL)
@@ -611,9 +749,11 @@ class UploadFrame(ctk.CTkFrame):
 
             self._display_polygon(LESION_TYPE_UNKNOWN)
             self._enable_clear_polygon_button()
+            self._enable_diameter_button()
         elif lesion[2] > 0:
             self._display_rectangle(LESION_TYPE_UNKNOWN)
             self._disable_clear_polygon_button()
+            self._disable_diameter_button()
 
         if self.find_lesion_button.cget("state") == tk.DISABLED:
             self.find_lesion_button.configure(state=tk.NORMAL)
