@@ -2,17 +2,16 @@ import math
 import queue
 import time
 import tkinter as tk
+from copy import deepcopy
 from io import BytesIO
-from operator import itemgetter
-
-import cairosvg
 from queue import Queue, Empty
 from threading import Thread
 from typing import Optional
 
+import cairosvg
+import customtkinter as ctk
 import cv2
 import numpy as np
-import customtkinter as ctk
 from CTkMessagebox import CTkMessagebox
 from PIL import Image, ImageDraw
 from tkinterdnd2 import TkinterDnD, DND_FILES
@@ -79,8 +78,8 @@ class UploadFrame(ctk.CTkFrame):
 
         self.original_image: Optional[Image.Image] = None
         self.segmented_image: Optional[Image.Image] = None
-        self.lesion_box: Optional[tuple[int, int, int, int]] = None
-        self.mask: Optional[np.ndarray] = None
+        self.lesion_bbox: Optional[tuple[int, int, int, int]] = None
+        self.lesion_mask: Optional[np.ndarray] = None
         self.polygon_vertices: list[tuple[int, int]] = []
 
         self.dnd_light_img = Image.open(resource_path("dnd-light.png"))
@@ -90,6 +89,13 @@ class UploadFrame(ctk.CTkFrame):
         # Published: 23 Jul 2017
         # Title: PIL and vectorbased graphics
         # Link: https://stackoverflow.com/a/45262575
+        out = BytesIO()
+        cairosvg.svg2png(url=resource_path("fit-polygon-normal.svg"), write_to=out)
+        self.fit_img_normal = Image.open(out)
+        out = BytesIO()
+        cairosvg.svg2png(url=resource_path("fit-polygon-disabled.svg"), write_to=out)
+        self.fit_img_disabled = Image.open(out)
+
         out = BytesIO()
         cairosvg.svg2png(url=resource_path("clear-polygon-normal.svg"), write_to=out)
         self.polygon_img_normal = Image.open(out)
@@ -101,6 +107,7 @@ class UploadFrame(ctk.CTkFrame):
         self.find_lesion_button: Optional[ctk.CTkButton] = None
         self.predict_class_button: Optional[ctk.CTkButton] = None
         self.hint_label: Optional[ctk.CTkLabel] = None
+        self.fit_polygon_button: Optional[ctk.CTkButton] = None
         self.clear_polygon_label: Optional[ctk.CTkLabel] = None
         self.circularity_label: Optional[ctk.CTkLabel] = None
         self.circularity_label_value: Optional[ctk.CTkLabel] = None
@@ -203,6 +210,24 @@ class UploadFrame(ctk.CTkFrame):
         )
         self.predict_class_button.place(x=325, y=575)
 
+        self.fit_polygon_button = ctk.CTkButton(
+            master=self.master,
+            text="",
+            height=30,
+            width=30,
+            border_width=1,
+            image=ctk.CTkImage(
+                light_image=self.fit_img_disabled,
+                dark_image=self.fit_img_disabled,
+                size=(30, 30),
+            ),
+            hover=False,
+            state=ctk.NORMAL,
+            fg_color="transparent",
+            command=self._fit_polygon,
+        )
+        self.fit_polygon_button.place(x=568, y=50)
+
         self.clear_polygon_label = ctk.CTkButton(
             master=self.master,
             text="",
@@ -219,7 +244,7 @@ class UploadFrame(ctk.CTkFrame):
             fg_color="transparent",
             command=self._clear_polygon,
         )
-        self.clear_polygon_label.place(x=568, y=50)
+        self.clear_polygon_label.place(x=568, y=90)
 
         self.circularity_label = ctk.CTkLabel(
             master=self.master,
@@ -235,8 +260,8 @@ class UploadFrame(ctk.CTkFrame):
             width=70,
             font=("Raleway", 14),
         )
-        self.circularity_label.place(x=557, y=100)
-        self.circularity_label_value.place(x=557, y=120)
+        self.circularity_label.place(x=557, y=140)
+        self.circularity_label_value.place(x=557, y=160)
 
         self.diameter_button = ctk.CTkButton(
             master=self.master,
@@ -254,7 +279,7 @@ class UploadFrame(ctk.CTkFrame):
             fg_color="transparent",
             command=self._handle_diameter_button_click,
         )
-        self.diameter_button.place(x=568, y=150)
+        self.diameter_button.place(x=568, y=190)
 
         self.diameter_label = ctk.CTkLabel(
             master=self.master,
@@ -270,8 +295,8 @@ class UploadFrame(ctk.CTkFrame):
             width=70,
             font=("Raleway", 14),
         )
-        self.diameter_label.place(x=557, y=190)
-        self.diameter_label_value.place(x=557, y=210)
+        self.diameter_label.place(x=557, y=230)
+        self.diameter_label_value.place(x=557, y=250)
 
         # By using this event we prevent errors in _wait_for_libraries_to_load due to fast ONNX loading
         self.events.ui_loaded.set()
@@ -279,6 +304,7 @@ class UploadFrame(ctk.CTkFrame):
     def _reset_all_buttons(self):
         self.find_lesion_button.configure(state=tk.NORMAL)
         self.predict_class_button.configure(state=tk.DISABLED)
+        self._disable_fit_polygon_button()
         self._disable_clear_polygon_button()
         self._disable_diameter_button()
 
@@ -371,7 +397,7 @@ class UploadFrame(ctk.CTkFrame):
             color = (0, 0, 0)
 
         ImageDraw.Draw(img).rectangle(
-            xy=self.lesion_box,
+            xy=self.lesion_bbox,
             outline=color,
             width=round(img.size[0] * 0.005),
         )
@@ -412,6 +438,73 @@ class UploadFrame(ctk.CTkFrame):
         )
 
         self.circularity_label_value.configure(text='0.00')
+
+    # ----------------------- #
+    # FITTING-RELATED METHODS #
+    # ----------------------- #
+
+    def _fit_polygon(self):
+        """
+        A good image for demo is ISIC_0035914
+        """
+        if not self.lesion_bbox and not self.lesion_mask:
+            return
+
+        img = self.segmented_image.copy()
+        bbox = self.lesion_bbox
+        mask = deepcopy(self.lesion_mask)
+
+        self.polygon_vertices = []
+
+        # User: Adrian Rosebrock
+        # Title: OpenCV GrabCut: Foreground Segmentation and Extraction
+        # Published: 27 July 2020
+        # Link: https://pyimagesearch.com/2020/07/27/opencv-grabcut-foreground-segmentation-and-extraction/
+        if mask is not None:
+            mask[mask > 0] = cv2.GC_PR_FGD
+            mask[mask == 0] = cv2.GC_BGD
+            fg_model = np.zeros((1, 65), dtype=np.float64)
+            bg_model = np.zeros((1, 65), dtype=np.float64)
+            cv2.grabCut(np.array(img), mask, None, bg_model, fg_model, 10, cv2.GC_INIT_WITH_MASK)
+
+            mask = np.array(mask == cv2.GC_PR_FGD).astype(np.uint8) * 255
+        # If we don't have any mask, we can try finding it within lesion's boundary box
+        elif bbox[2] > 0:
+            mask = np.zeros(img.size[:2], dtype=np.uint8)
+            fg_model = np.zeros((1, 65), dtype=np.float64)
+            bg_model = np.zeros((1, 65), dtype=np.float64)
+            rect = (bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1])
+            cv2.grabCut(np.array(img), mask, rect, bg_model, fg_model, 10, cv2.GC_INIT_WITH_RECT)
+
+            mask = np.array(mask == cv2.GC_PR_FGD).astype(np.uint8) * 255
+
+        if mask is not None:
+            self.lesion_mask = mask
+            contours, _  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            self._display_contours_or_bbox(contours, bbox)
+
+    def _enable_fit_polygon_button(self):
+        self.fit_polygon_button.configure(
+            state=ctk.NORMAL,
+            hover=True,
+            image=ctk.CTkImage(
+                light_image=self.fit_img_normal,
+                dark_image=self.fit_img_normal,
+                size=(30, 30),
+            ),
+        )
+
+    def _disable_fit_polygon_button(self):
+        self.fit_polygon_button.configure(
+            state=ctk.DISABLED,
+            hover=False,
+            image=ctk.CTkImage(
+                light_image=self.fit_img_disabled,
+                dark_image=self.fit_img_disabled,
+                size=(30, 30),
+            ),
+        )
 
     # ------------------------ #
     # DIAMETER-RELATED METHODS #
@@ -598,7 +691,7 @@ class UploadFrame(ctk.CTkFrame):
 
         self.original_image = img
         self.segmented_image = None
-        self.lesion_box = []
+        self.lesion_bbox = []
         self.polygon_vertices = []
 
         self.image_label.configure(
@@ -704,7 +797,7 @@ class UploadFrame(ctk.CTkFrame):
 
         if self.polygon_vertices:
             self._display_polygon(first_binary_label)
-        elif self.lesion_box[2] > 0:
+        elif self.lesion_bbox[2] > 0:
             self._display_rectangle(first_binary_label)
 
         if self.find_lesion_button.cget("state") == tk.DISABLED:
@@ -717,11 +810,12 @@ class UploadFrame(ctk.CTkFrame):
 
     def _draw_seg_inference_result(self):
         img: Optional[Image.Image] = None
-        lesion: Optional[tuple[int, int, int, int]] = None
+        bbox: Optional[tuple[int, int, int, int]] = None
         mask: Optional[np.ndarray] = None
+        contours = []
 
         try:
-            (img, lesion, mask) = self.seg_results.get(timeout=15)
+            (img, bbox, mask) = self.seg_results.get(timeout=15)
             self.seg_results.task_done()
         except Empty:
             CTkMessagebox(
@@ -733,27 +827,14 @@ class UploadFrame(ctk.CTkFrame):
 
         # Save square crop and box coordinates around a lesion
         self.segmented_image = img.copy()
-        self.lesion_box = lesion
-        self.mask = mask
+        self.lesion_bbox = bbox
+        self.lesion_mask = mask
         self.polygon_vertices = []
 
-        contours, _  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if mask is not None:
+            contours, _  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        if len(contours) > 0:
-            # Sort objects by the number of vertices in descendant order
-            # TODO What to do with other contours? Should we display them all?
-            contours = sorted(contours, key=lambda x: x.shape[0], reverse=True)
-
-            for point in contours[0].reshape(-1, 2).tolist():
-                self.polygon_vertices.append(tuple(point))
-
-            self._display_polygon(LESION_TYPE_UNKNOWN)
-            self._enable_clear_polygon_button()
-            self._enable_diameter_button()
-        elif lesion[2] > 0:
-            self._display_rectangle(LESION_TYPE_UNKNOWN)
-            self._disable_clear_polygon_button()
-            self._disable_diameter_button()
+        self._display_contours_or_bbox(contours, bbox)
 
         if self.find_lesion_button.cget("state") == tk.DISABLED:
             self.find_lesion_button.configure(state=tk.NORMAL)
@@ -761,12 +842,31 @@ class UploadFrame(ctk.CTkFrame):
         if self.predict_class_button.cget("state") == tk.DISABLED:
             self.predict_class_button.configure(state=tk.NORMAL)
 
-        if lesion[2] > 0:
+        if bbox[2] > 0:
             self.hint_label.configure(text="A lesion is found.")
         else:
             self.hint_label.configure(text="No lesion is found, but you can still try predicting")
 
         self.thread_gc()
+
+    def _display_contours_or_bbox(self, contours, bbox):
+        if len(contours) > 0:
+            # Sort objects by the number of vertices in descendant order
+            # TODO What to do with other contours? Should we display them all?
+            contours = sorted(contours, key=lambda x: x.shape[0], reverse=True)
+
+            for point in contours[0].reshape(-1, 2).tolist():
+                self.polygon_vertices.append((point[0], point[1]))
+
+            self._display_polygon(LESION_TYPE_UNKNOWN)
+            self._enable_fit_polygon_button()
+            self._enable_clear_polygon_button()
+            self._enable_diameter_button()
+        elif bbox[2] > 0:
+            self._display_rectangle(LESION_TYPE_UNKNOWN)
+            self._enable_fit_polygon_button()
+            self._disable_clear_polygon_button()
+            self._disable_diameter_button()
 
     def redraw_page(self) -> None:
         self.reset_page()
