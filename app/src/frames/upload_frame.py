@@ -329,6 +329,7 @@ class UploadFrame(ctk.CTkFrame):
         else:
             self.polygon_vertices.append((x0, y0))
             self._display_polygon(LESION_TYPE_UNKNOWN)
+            self._enable_fit_polygon_button()
             self._enable_clear_polygon_button()
 
     def _display_polygon(self, malignant: int) -> None:
@@ -412,6 +413,7 @@ class UploadFrame(ctk.CTkFrame):
 
     def _clear_polygon(self):
         self.polygon_vertices = []
+        self.lesion_mask = None
         self._display_polygon(LESION_TYPE_UNKNOWN)
         self._disable_clear_polygon_button()
 
@@ -454,8 +456,6 @@ class UploadFrame(ctk.CTkFrame):
         bbox = self.lesion_bbox
         mask = deepcopy(self.lesion_mask)
 
-        self.polygon_vertices = []
-
         # User: Adrian Rosebrock
         # Title: OpenCV GrabCut: Foreground Segmentation and Extraction
         # Published: 27 July 2020
@@ -466,8 +466,13 @@ class UploadFrame(ctk.CTkFrame):
             fg_model = np.zeros((1, 65), dtype=np.float64)
             bg_model = np.zeros((1, 65), dtype=np.float64)
             cv2.grabCut(np.array(img), mask, None, bg_model, fg_model, 10, cv2.GC_INIT_WITH_MASK)
-
-            mask = np.array(mask == cv2.GC_PR_FGD).astype(np.uint8) * 255
+        # Fit hand-made polygon
+        elif self.polygon_vertices:
+            mask = np.zeros(img.size[:2], dtype=np.uint8)
+            cv2.fillConvexPoly(mask, np.array(self.polygon_vertices), cv2.GC_PR_FGD)
+            fg_model = np.zeros((1, 65), dtype=np.float64)
+            bg_model = np.zeros((1, 65), dtype=np.float64)
+            cv2.grabCut(np.array(img), mask, None, bg_model, fg_model, 10, cv2.GC_INIT_WITH_MASK)
         # If we don't have any mask, we can try finding it within lesion's boundary box
         elif bbox[2] > 0:
             mask = np.zeros(img.size[:2], dtype=np.uint8)
@@ -476,13 +481,13 @@ class UploadFrame(ctk.CTkFrame):
             rect = (bbox[0], bbox[1], bbox[2] - bbox[0], bbox[3] - bbox[1])
             cv2.grabCut(np.array(img), mask, rect, bg_model, fg_model, 10, cv2.GC_INIT_WITH_RECT)
 
-            mask = np.array(mask == cv2.GC_PR_FGD).astype(np.uint8) * 255
+        mask = np.array(mask == cv2.GC_PR_FGD).astype(np.uint8) * 255
 
-        if mask is not None:
-            self.lesion_mask = mask
-            contours, _  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.polygon_vertices = []
+        self.lesion_mask = mask
+        contours, _  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            self._display_contours_or_bbox(contours, bbox)
+        self._display_contours_or_bbox(contours, bbox)
 
     def _enable_fit_polygon_button(self):
         self.fit_polygon_button.configure(
