@@ -1,5 +1,6 @@
 import math
 import queue
+import random
 import time
 import tkinter as tk
 from copy import deepcopy
@@ -21,7 +22,7 @@ from training.classification.constants import CROP_SIZE
 from ..events import Events
 from ..inference import ClassificationWorker, SegmentationWorker
 from ..options import Options
-from ..polygon import centroid, circularity
+from ..polygon import centroid, circularity, perimeter, area
 from ..utils import resource_path
 
 LESION_TYPE_UNKNOWN = -1
@@ -211,6 +212,23 @@ class UploadFrame(ctk.CTkFrame):
         )
         self.predict_class_button.place(x=325, y=575)
 
+        self.asymmetry_label = ctk.CTkLabel(
+            master=self.master,
+            text="Asymmetry:",
+            height=20,
+            width=70,
+            font=("Raleway", 14)
+        )
+        self.asymmetry_label_value = ctk.CTkLabel(
+            master=self.master,
+            text="0.00",
+            height=15,
+            width=70,
+            font=("Raleway", 14),
+        )
+        self.asymmetry_label.place(x=557, y=50)
+        self.asymmetry_label_value.place(x=557, y=70)
+
         self.fit_polygon_button = ctk.CTkButton(
             master=self.master,
             text="",
@@ -227,7 +245,7 @@ class UploadFrame(ctk.CTkFrame):
             fg_color="transparent",
             command=self._fit_polygon,
         )
-        self.fit_polygon_button.place(x=568, y=50)
+        self.fit_polygon_button.place(x=568, y=100)
 
         self.clear_polygon_label = ctk.CTkButton(
             master=self.master,
@@ -245,7 +263,7 @@ class UploadFrame(ctk.CTkFrame):
             fg_color="transparent",
             command=self._clear_polygon,
         )
-        self.clear_polygon_label.place(x=568, y=90)
+        self.clear_polygon_label.place(x=568, y=140)
 
         self.circularity_label = ctk.CTkLabel(
             master=self.master,
@@ -261,8 +279,8 @@ class UploadFrame(ctk.CTkFrame):
             width=70,
             font=("Raleway", 14),
         )
-        self.circularity_label.place(x=557, y=140)
-        self.circularity_label_value.place(x=557, y=160)
+        self.circularity_label.place(x=557, y=190)
+        self.circularity_label_value.place(x=557, y=210)
 
         self.diameter_button = ctk.CTkButton(
             master=self.master,
@@ -280,7 +298,7 @@ class UploadFrame(ctk.CTkFrame):
             fg_color="transparent",
             command=self._handle_diameter_button_click,
         )
-        self.diameter_button.place(x=568, y=190)
+        self.diameter_button.place(x=568, y=240)
 
         self.diameter_label = ctk.CTkLabel(
             master=self.master,
@@ -296,8 +314,8 @@ class UploadFrame(ctk.CTkFrame):
             width=70,
             font=("Raleway", 14),
         )
-        self.diameter_label.place(x=557, y=230)
-        self.diameter_label_value.place(x=557, y=250)
+        self.diameter_label.place(x=557, y=280)
+        self.diameter_label_value.place(x=557, y=300)
 
         # By using this event we prevent errors in _wait_for_libraries_to_load due to fast ONNX loading
         self.events.ui_loaded.set()
@@ -581,6 +599,10 @@ class UploadFrame(ctk.CTkFrame):
 
         self.diameter_label.configure(text='Diameter:')
         self.diameter_label_value.configure(text='0.0 mm')
+
+    # ------------------------- #
+    # ASYMMETRY-RELATED METHODS #
+    # ------------------------- #
 
     def _wait_for_libraries_to_load(self):
         if (
@@ -872,6 +894,9 @@ class UploadFrame(ctk.CTkFrame):
 
             diameter = self._measure_lesion_diameter()
             self._deactivate_diameter_mode(diameter)
+
+            asymmetry = self._get_asymmetry_index()
+            self.asymmetry_label_value.configure(text='%.2f' % asymmetry)
         elif bbox[2] > 0:
             self._display_rectangle(LESION_TYPE_UNKNOWN)
             self._enable_fit_polygon_button()
@@ -994,6 +1019,78 @@ class UploadFrame(ctk.CTkFrame):
             return distance / (len(group) - 1)
 
         return None
+
+    def _get_asymmetry_index(self) -> float:
+        img = self.segmented_image.copy()
+        mask = deepcopy(self.lesion_mask)
+        polygon = self.polygon_vertices
+
+        c = centroid(polygon)
+        c = (round(c[0]), round(c[1]))
+
+        # Draws four lines across the barycenter that divide the lesion's surface into 8 octanes
+        mask = cv2.line(mask, (c[0], 0), (c[0], img.size[1]), color=(0, 0, 0), thickness=2)
+        mask = cv2.line(mask, (0, c[1]), (img.size[0], c[1]), color=(0, 0, 0), thickness=2)
+        mask = cv2.line(mask, (c[0] + 1000, c[1] + 1000), (c[0] - 1000, c[1] - 1000), color=(0, 0, 0), thickness=2)
+        mask = cv2.line(mask, (c[0] - 1000, c[1] + 1000), (c[0] + 1000, c[1] - 1000), color=(0, 0, 0), thickness=2)
+
+        # Detect contours in octanes and group them (octanes may contane more than one contour)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        groups: dict[int, list[list[tuple[int, int]]]] = {}
+
+        for contour in contours:
+            polygon: list[tuple[int, int]] = []
+
+            for point in contour.reshape(-1, 2).tolist():
+                polygon.append((point[0], point[1]))
+
+            # Skip tiny contours (likely noise)
+            if len(polygon) < 3:
+                continue
+
+            # Pick a random point from a polygon to find out which octant it belongs to
+            candidate = random.choice(polygon)
+
+            if candidate[0] > c[0] and candidate[1] < c[1]:
+                if (candidate[0] - c[0]) < (c[1] - candidate[1]):
+                    octant = 1
+                else:
+                    octant = 2
+            elif candidate[0] > c[0] and candidate[1] > c[1]:
+                if (candidate[0] - c[0]) > (candidate[1] - c[1]):
+                    octant = 3
+                else:
+                    octant = 4
+            elif candidate[0] < c[0] and candidate[1] > c[1]:
+                if (c[0] - candidate[0]) < (candidate[1] - c[1]):
+                    octant = 5
+                else:
+                    octant = 6
+            elif (c[0] - candidate[0]) > (c[1] - candidate[1]):
+                octant = 7
+            else:
+                octant = 8
+
+            if octant not in groups:
+                groups[octant] = []
+
+            groups[octant].append(polygon)
+
+        # Calculate asymmetry using the method (with a little modification) proposed by Sancen-Plaza et al. (2018) in
+        # their work https://doi.org/10.1186/s12911-018-0641-7
+        asymmetry: float = 0
+
+        for octant in range(1, 5):
+            c = sum([perimeter(polygon) for polygon in groups[octant]]) / (
+                        4 * math.sqrt(sum([area(polygon) for polygon in groups[octant]])))
+            n = sum([perimeter(polygon) for polygon in groups[octant + 4]]) / (
+                        4 * math.sqrt(sum([area(polygon) for polygon in groups[octant + 4]])))
+
+            # In original paper, the authors use (c-n) ** 2. In this code, absolute difference is used to avoid small
+            # numbers. In most cases (c-n) is a small number 0.1-0.2, thus its square tends to be close to zero.
+            asymmetry += abs(c - n)
+
+        return asymmetry
 
     def redraw_page(self) -> None:
         self.reset_page()
