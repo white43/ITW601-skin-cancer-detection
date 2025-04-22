@@ -4,6 +4,7 @@ import time
 import tkinter as tk
 from copy import deepcopy
 from io import BytesIO
+from operator import itemgetter
 from queue import Queue, Empty
 from threading import Thread
 from typing import Optional
@@ -520,9 +521,10 @@ class UploadFrame(ctk.CTkFrame):
             self._activate_diameter_mode()
 
     def _measure_lesion_diameter(self) -> float:
-        mm1 = math.sqrt((self.clicks[1][0] - self.clicks[0][0]) ** 2 + (self.clicks[1][1] - self.clicks[0][1]) ** 2)
-        mm2 = math.sqrt((self.clicks[2][0] - self.clicks[1][0]) ** 2 + (self.clicks[2][1] - self.clicks[1][1]) ** 2)
-        mm = (mm1 + mm2) / 2
+        mm = self._get_mm_size()
+
+        if mm is None:
+            return 0
 
         candidates = []
 
@@ -563,7 +565,7 @@ class UploadFrame(ctk.CTkFrame):
     def _deactivate_diameter_mode(self, diameter: float):
         self.diameter_measure_mode = False
         self.diameter_label.configure(text='Diameter:')
-        self.diameter_label_value.configure(text='%.0f mm' % diameter)
+        self.diameter_label_value.configure(text='%.1f mm' % diameter)
         self.clicks = []
 
     def _disable_diameter_button(self):
@@ -578,7 +580,7 @@ class UploadFrame(ctk.CTkFrame):
         )
 
         self.diameter_label.configure(text='Diameter:')
-        self.diameter_label_value.configure(text='0 mm')
+        self.diameter_label_value.configure(text='0.0 mm')
 
     def _wait_for_libraries_to_load(self):
         if (
@@ -867,11 +869,131 @@ class UploadFrame(ctk.CTkFrame):
             self._enable_fit_polygon_button()
             self._enable_clear_polygon_button()
             self._enable_diameter_button()
+
+            diameter = self._measure_lesion_diameter()
+            self._deactivate_diameter_mode(diameter)
         elif bbox[2] > 0:
             self._display_rectangle(LESION_TYPE_UNKNOWN)
             self._enable_fit_polygon_button()
             self._disable_clear_polygon_button()
             self._disable_diameter_button()
+
+    def _get_mm_size(self) -> Optional[float]:
+        img = np.array(self.segmented_image.copy().convert('L'))
+        img = cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 5, 5)
+
+        (n_components, components, stats, _) = cv2.connectedComponentsWithStats(img, None, cv2.CV_8U)
+
+        objects: list[tuple[float, np.ndarray]] = []
+
+        # Iterate over found connected components
+        for i in range(1, n_components):
+            # Dimension stats of the connected component
+            width = stats[i, cv2.CC_STAT_WIDTH]
+            height = stats[i, cv2.CC_STAT_HEIGHT]
+
+            # Add to the final mask only those connected components those dimensions and area exceed minimum values
+            if width > 15 or height > 15:
+                # Calculate the perimeter and area of the contour
+                component_mask = np.array(components == i, dtype=np.uint8) * 255
+                contours, _ = cv2.findContours(component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+                for contour in contours:
+                    contour = contour.reshape(-1, 2).astype(np.float32)
+
+                    contour[contour[:, 1] != 0, 1] *= -1
+
+                    y1 = max(contour[:, 1])
+                    y2 = min(contour[:, 1])
+                    x1 = contour[contour[:, 1] == y1, 0].mean()
+                    x2 = contour[contour[:, 1] == y2, 0].mean()
+
+                    a = (y2 - y1) / (x2 - x1 + 1e-7)
+                    c = ((y1 - a * x1) + (y2 - a * x2)) / 2
+                    angle = math.atan(a) * 180 / math.pi
+
+                    error = np.mean(((a * contour[:, 0] + c) - contour[:, 1]) ** 2)
+
+                    if error < 50:
+                        objects.append((angle, contour))
+
+
+        if len(objects) == 0:
+            return None
+
+        groups: list[list[np.ndarray]] = []
+        group: list[np.ndarray] = []
+        min_group: Optional[float] = None
+
+        for angle, contour in sorted(objects, key=itemgetter(0)):
+
+            if min_group is not None:
+                # Get rid of a single distant line and start a new iteration
+                if ((min_group < 0 and angle < 0 and abs(min_group - angle) > 5)
+                        or (min_group >= 0 and angle >= 0 and angle - min_group > 5)
+                        or (min_group < 0 and angle >= 0 and abs(min_group) + angle > 5)):
+                    # We need minimum 3 lines
+                    if len(group) >= 3:
+                        groups.append(group)
+
+                    min_group = None
+                    group = []
+
+            if min_group is None:
+                min_group = angle
+                group.append(contour)
+                continue
+
+            distance = None
+
+            if len(group) > 0:
+                c1 = centroid(contour.tolist())
+                c2 = centroid(group[-1][5].tolist())
+                y = (abs(c1[1]), abs(c2[1]))
+                x = (abs(c1[0]), abs(c2[0]))
+                distance = math.sqrt((max(y) - min(y)) ** 2 + (max(x) - min(x)) ** 2)
+
+            if distance is None or distance >= 15:
+                group.append(contour)
+
+        if len(group) >= 3:
+            groups.append(group)
+
+        # TODO Find a way how to choose one group that represents ruler marks better
+        if len(groups) != 1:
+            return None
+
+        group = groups[0]
+
+        min_x1 = None
+        left_line = None
+        max_x1 = None
+        right_line = None
+
+        for contour in group:
+            # TODO Ruler marks can be directed anywhere
+            y1 = max(contour[:, 1])
+            x1 = contour[contour[:, 1] == y1, 0].mean()
+
+            if min_x1 is None or x1 < min_x1:
+                min_x1 = x1
+                left_line = contour
+
+            if max_x1 is None or x1 > max_x1:
+                max_x1 = x1
+                right_line = contour
+
+        if left_line is not None and right_line is not None:
+            left_centroid = centroid(left_line.tolist())
+            right_centroid = centroid(right_line.tolist())
+
+            y = (abs(left_centroid[1]), abs(right_centroid[1]))
+            x = (abs(left_centroid[0]), abs(right_centroid[0]))
+            distance = math.sqrt((max(y) - min(y)) ** 2 + (max(x) - min(x)) ** 2)
+
+            return distance / (len(group) - 1)
+
+        return None
 
     def redraw_page(self) -> None:
         self.reset_page()
