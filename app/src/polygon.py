@@ -78,6 +78,9 @@ def centroid(polygon: list[tuple[int, int]]) -> tuple[float, float]:
 
     s = area(polygon)
 
+    if s == 0:
+        return 0, 0
+
     xs /= 6 * s
     ys /= 6 * s
 
@@ -103,7 +106,14 @@ def circularity(polygon: list[tuple[int, int]]) -> float:
     a = area(polygon)
     p = perimeter(polygon)
 
+    if a == 0 or p == 0:
+        return 0
+
     return 4 * math.pi * a / p ** 2
+
+def noncircularity(polygon: list[tuple[int, int]]) -> float:
+    c = circularity(polygon)
+    return 1 / c if c > 0 else 0
 
 
 def shape_irregularity(polygon: list[tuple[int, int]]) -> float:
