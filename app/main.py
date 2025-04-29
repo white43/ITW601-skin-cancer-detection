@@ -9,6 +9,7 @@ from PIL import Image
 
 from app.src.app import App
 from app.src.events import Events
+from app.src.frames.barber_frame import BarberFrame
 from app.src.frames.upload_frame import UploadFrame
 from app.src.options import Options
 from app.src.overrides import Tk
@@ -22,6 +23,9 @@ cli_opts = argparse.ArgumentParser()
 cli_opts.add_argument("--cls-model")
 cli_opts.add_argument("--seg-model")
 cli_opts.add_argument("--download-from")
+cli_opts.add_argument("--debug", action='store_true')
+cli_opts.add_argument("--debug-asymmetry", action='store_true')
+cli_opts.add_argument("--debug-diameter", action='store_true')
 
 options = Options()
 cli_opts.parse_known_args(namespace=options)
@@ -44,7 +48,9 @@ downloading = Thread(target=lambda: download_models(options, events, download_me
 downloading.start()
 
 upload_frame = UploadFrame(window, options, events, seg_tasks, seg_results, download_meter)
+barber_page = BarberFrame(window)
 app = App(upload_frame)
+barber_page.tkraise()
 
 
 def graceful_shutdown():

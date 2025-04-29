@@ -81,7 +81,7 @@ def centroid(polygon: list[tuple[int, int]]) -> tuple[float, float]:
     xs /= 6 * s
     ys /= 6 * s
 
-    return abs(xs), abs(ys)
+    return round(abs(xs)), round(abs(ys))
 
 
 def circularity(polygon: list[tuple[int, int]]) -> float:
@@ -105,6 +105,9 @@ def circularity(polygon: list[tuple[int, int]]) -> float:
 
     return 4 * math.pi * a / p ** 2
 
+def noncircularity(polygon: list[tuple[int, int]]) -> float:
+    return 1 / circularity(polygon)
+
 
 def shape_irregularity(polygon: list[tuple[int, int]]) -> float:
     x, y = 0, 1
@@ -119,4 +122,4 @@ def shape_irregularity(polygon: list[tuple[int, int]]) -> float:
     mean = lens.mean()
     stddev = lens.std()
 
-    return stddev / mean
+    return round(mean)
