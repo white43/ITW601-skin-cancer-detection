@@ -21,7 +21,7 @@ from .barber_frame import BarberFrame
 from ..events import Events
 from ..inference import ClassificationWorker, SegmentationWorker
 from ..options import Options
-from ..polygon import centroid, circularity
+from ..polygon import centroid, noncircularity
 from ..utils import resource_path
 
 LESION_TYPE_UNKNOWN = -1
@@ -118,8 +118,8 @@ class UploadFrame(ctk.CTkFrame):
         self.hint_label: Optional[ctk.CTkLabel] = None
         self.fit_polygon_button: Optional[ctk.CTkButton] = None
         self.clear_polygon_label: Optional[ctk.CTkLabel] = None
-        self.circularity_label: Optional[ctk.CTkLabel] = None
-        self.circularity_label_value: Optional[ctk.CTkLabel] = None
+        self.noncircularity_label: Optional[ctk.CTkLabel] = None
+        self.noncircularity_label_value: Optional[ctk.CTkLabel] = None
 
         # Diameter-related images, controls, and variables
         self.diameter_measure_mode: bool = False
@@ -273,22 +273,22 @@ class UploadFrame(ctk.CTkFrame):
         )
         self.clear_polygon_label.place(x=568, y=90)
 
-        self.circularity_label = ctk.CTkLabel(
+        self.noncircularity_label = ctk.CTkLabel(
             master=self.master,
-            text="Circularity:",
+            text="Non-circ.:",
             height=20,
             width=70,
             font=("Raleway", 14)
         )
-        self.circularity_label_value = ctk.CTkLabel(
+        self.noncircularity_label_value = ctk.CTkLabel(
             master=self.master,
             text="0.00",
             height=15,
             width=70,
             font=("Raleway", 14),
         )
-        self.circularity_label.place(x=557, y=140)
-        self.circularity_label_value.place(x=557, y=160)
+        self.noncircularity_label.place(x=557, y=140)
+        self.noncircularity_label_value.place(x=557, y=160)
 
         self.diameter_button = ctk.CTkButton(
             master=self.master,
@@ -410,10 +410,10 @@ class UploadFrame(ctk.CTkFrame):
             ),
         )
 
-        self._circularity_label(circularity(self.polygon_vertices))
+        self._noncircularity_label(noncircularity(self.polygon_vertices))
 
-    def _circularity_label(self, c: float):
-        self.circularity_label_value.configure(text="%0.2f" % c)
+    def _noncircularity_label(self, nc: float):
+        self.noncircularity_label_value.configure(text="%0.2f" % nc)
 
     def _display_rectangle(self, malignant: int) -> None:
         img = self.segmented_image.copy()
@@ -467,7 +467,7 @@ class UploadFrame(ctk.CTkFrame):
             ),
         )
 
-        self.circularity_label_value.configure(text='0.00')
+        self.noncircularity_label_value.configure(text='0.00')
 
     # --------------------- #
     # RAZOR-RELATED METHODS #
