@@ -179,7 +179,7 @@ truth = np.argmax(pd.read_csv(args.ground_truth).set_index("image"), axis=1)
 plt.subplots(figsize=(6, 6))
 sns.heatmap(
     confusion_matrix(truth, pred, normalize='true'),
-    fmt=".0f",
+    fmt=".2g",
     cmap="Reds",
     xticklabels=LABELS,
     yticklabels=LABELS,
