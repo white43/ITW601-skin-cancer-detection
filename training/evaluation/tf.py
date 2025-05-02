@@ -8,9 +8,13 @@ from operator import itemgetter
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import keras
 import numpy as np
+import pandas as pd
+import seaborn as sns
 import tensorflow as tf
 from isic_challenge_scoring import ClassificationScore, ClassificationMetric
 from keras.src.metrics import CategoricalCrossentropy
+from matplotlib import pyplot as plt
+from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 
 from training.classification.constants import LABELS
@@ -149,6 +153,9 @@ for model in args.models:
         ground_truth=args.ground_truth,
     )
 
+if args.quick:
+    exit(0)
+
 if args.reduce is not None:
     test.dump_probabilities(args.reduce)
 
@@ -161,3 +168,25 @@ if args.reduce is not None:
     )
 
     print(score.to_string())
+
+    pred = args.reduce
+else:
+    pred = args.models
+
+pred = np.argmax(pd.read_csv(pred).set_index("image").to_numpy(), axis=1)
+truth = np.argmax(pd.read_csv(args.ground_truth).set_index("image"), axis=1)
+
+plt.subplots(figsize=(6, 6))
+sns.heatmap(
+    confusion_matrix(truth, pred, normalize='true'),
+    fmt=".0f",
+    cmap="Reds",
+    xticklabels=LABELS,
+    yticklabels=LABELS,
+    cbar=False,
+    annot=True,
+)
+plt.xlabel('Prediction')
+plt.ylabel('Truth')
+plt.tight_layout()
+plt.savefig(args.reduce + ".png")
