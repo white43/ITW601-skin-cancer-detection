@@ -40,6 +40,11 @@ def extract_images(archive: str, dest: str):
             basename = os.path.basename(file.filename)
 
             if (basename[-3:] == "png" or basename[-3:] == "jpg") and not os.path.exists(os.path.join(dest, basename)):
+                # This image doesn't count towards balanced accuracy
+                # https://forum.isic-archive.com/t/task-3-testing-data-wrong-image/600
+                if basename[:-4] == "ISIC_0035068":
+                    continue
+
                 with zp.open(file.filename) as source, open(os.path.join(dest, basename), "wb") as target:
                     shutil.copyfileobj(source, target)
                     counter += 1
@@ -56,7 +61,9 @@ def extraxt_csv(archive: str, dest: str):
 
             if basename[-3:] == "csv" and not os.path.exists(os.path.join(dest, basename)):
                 with zp.open(file.filename) as source, open(os.path.join(dest, basename), "wb") as target:
-                    shutil.copyfileobj(source, target)
+                    for line in source:
+                        if not line.startswith(b"ISIC_0035068"):
+                            target.write(line)
 
     print("Extracted a file to %s from %s" % (dest, archive))
 
