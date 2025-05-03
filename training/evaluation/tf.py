@@ -188,7 +188,7 @@ if args.reduce is not None:
 
     pred = args.reduce
 else:
-    pred = args.models
+    pred = args.models[0] + ".csv"
 
 pred = np.argmax(pd.read_csv(pred).set_index("image").to_numpy(), axis=1)
 truth = np.argmax(pd.read_csv(args.ground_truth).set_index("image"), axis=1)
@@ -206,4 +206,4 @@ sns.heatmap(
 plt.xlabel('Prediction')
 plt.ylabel('Truth')
 plt.tight_layout()
-plt.savefig(args.reduce + ".png")
+plt.savefig((args.reduce if args.reduce else args.models[0]) + ".png")
