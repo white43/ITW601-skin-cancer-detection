@@ -86,41 +86,58 @@ class ComprehensiveEvaluation(Evaluation):
         self.accumulator: dict[str, np.ndarray] = {}
 
     def evaluate(self, model_path: str, opts: Options, ground_truth: str | None = None) -> None:
-        results = []
+        if os.path.exists(model_path + ".raw.csv"):
+            with open(model_path + ".raw.csv", 'r', newline='') as csvfile:
+                for i, row in enumerate(csv.reader(csvfile)):
+                    if i == 0:
+                        continue
 
-        files, ds = get_test_dataset(opts, get_input_shape_for(options.model), LABELS)
+                    if row[0] not in self.accumulator:
+                        self.accumulator[row[0]] = np.zeros(len(LABELS))
 
-        model_class = keras.models.load_model(model_path)
-        model_class.compile(metrics=[CategoricalCrossentropy(name='loss'),
-                                     MeanRecall(num_labels=len(LABELS), reduce="mean", name="mean_recall"),
-                                     MeanRecall(num_labels=len(LABELS), reduce="std", name="mean_recall_std"),
-                                     keras.metrics.AUC(name="auc")])
+                    self.accumulator[row[0]] += np.array(row[1:], dtype=np.float64)
+        else:
+            raw_results = []
+            one_hot_results = []
 
-        ds = tf.data.Dataset.zip(files, ds).as_numpy_iterator()
-        length = len(files)
+            files, ds = get_test_dataset(opts, get_input_shape_for(options.model), LABELS)
 
-        for file_batch, [image_batch, _] in tqdm(ds, total=length):
-            file_batch.astype('U')
-            predictions = model_class.predict_on_batch(image_batch)
+            model_class = keras.models.load_model(model_path)
+            model_class.compile(metrics=[CategoricalCrossentropy(name='loss'),
+                                         MeanRecall(num_labels=len(LABELS), reduce="mean", name="mean_recall"),
+                                         MeanRecall(num_labels=len(LABELS), reduce="std", name="mean_recall_std"),
+                                         keras.metrics.AUC(name="auc")])
 
-            for file, prediction in zip(file_batch, predictions):
-                basename = os.path.basename(str(file))[:-5]
+            ds = tf.data.Dataset.zip(files, ds).as_numpy_iterator()
+            length = len(files)
 
-                if basename not in self.accumulator:
-                    self.accumulator[basename] = np.zeros(len(LABELS))
+            for file_batch, [image_batch, _] in tqdm(ds, total=length):
+                file_batch.astype('U')
+                predictions = model_class.predict_on_batch(image_batch)
 
-                self.accumulator[basename] += prediction
+                for file, prediction in zip(file_batch, predictions):
+                    basename = os.path.basename(str(file))[:-5]
 
-                one_hot = np.zeros(len(LABELS))
-                one_hot[np.argmax(prediction)] = 1.0
-                results.append([basename] + one_hot.tolist())
+                    if basename not in self.accumulator:
+                        self.accumulator[basename] = np.zeros(len(LABELS))
 
-        with open(model_path + ".csv", 'w', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            writer.writerow(['image'] + LABELS)
-            writer.writerows(sorted(results, key=itemgetter(0)))
+                    self.accumulator[basename] += prediction
 
-        print("Model: %s" % os.path.basename(model_path))
+                    raw_results.append([basename] + prediction.tolist())
+
+                    one_hot = np.zeros(len(LABELS))
+                    one_hot[np.argmax(prediction)] = 1.0
+                    one_hot_results.append([basename] + one_hot.tolist())
+
+            with open(model_path + ".raw.csv", 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['image'] + LABELS)
+                writer.writerows(sorted(raw_results, key=itemgetter(0)))
+
+            with open(model_path + ".csv", 'w', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['image'] + LABELS)
+                writer.writerows(sorted(one_hot_results, key=itemgetter(0)))
 
         score = ClassificationScore.from_file(
             pathlib.Path(ground_truth),
