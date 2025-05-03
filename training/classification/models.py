@@ -124,7 +124,7 @@ def get_imagenet_or_random_model(options: Options, labels: int) -> keras.Model:
             input_shape=get_input_shape_for(options.model),
             weights=options.weights,
         )
-    elif options.model == "convnexttiny":
+    elif options.model == "convnext_tiny":
         backbone = keras.applications.ConvNeXtTiny(
             include_top=False,
             input_shape=get_input_shape_for(options.model),
