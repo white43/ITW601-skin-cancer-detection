@@ -1,6 +1,6 @@
 import keras
 import tensorflow as tf
-from keras.regularizers import L2
+from keras.regularizers import L1L2
 from keras.src.applications.efficientnet_v2 import EfficientNetV2
 
 from training.classification.constants import INPUT_SIZES
@@ -147,8 +147,8 @@ def get_imagenet_or_random_model(options: Options, labels: int) -> keras.Model:
         x = keras.layers.Dense(
             units=options.neurons,
             activation="swish",
-            kernel_regularizer=L2(options.l2) if options.l2 > 0 else None,
-            bias_regularizer=L2(options.l2) if options.l2 > 0 else None,
+            kernel_regularizer=L1L2(l1=options.l2, l2=options.l2) if options.l1 > 0 or options.l2 > 0 else None,
+            bias_regularizer=L1L2(l1=options.l2, l2=options.l2) if options.l1 > 0 or options.l2 > 0 else None,
             name='top1_dense')(x)
 
         if options.dropout > 0:
