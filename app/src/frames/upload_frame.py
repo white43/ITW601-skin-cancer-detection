@@ -940,11 +940,11 @@ class UploadFrame(ctk.CTkFrame):
         self.lesion_mask = mask
         self.polygon_vertices = []
 
-        i = np.bitwise_and(np.array(img.copy()), cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB))
-        i = cv2.cvtColor(i, cv2.COLOR_BGR2RGB)
-        cv2.imwrite("segment.png", i)
-
         if mask is not None:
+            i = np.bitwise_and(np.array(img.copy()), cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB))
+            i = cv2.cvtColor(i, cv2.COLOR_BGR2RGB)
+            cv2.imwrite("segment.png", i)
+
             contours, _  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         self._display_contours_or_bbox(contours, bbox)
@@ -971,7 +971,7 @@ class UploadFrame(ctk.CTkFrame):
             for point in contours[0].reshape(-1, 2).tolist():
                 self.polygon_vertices.append((point[0], point[1]))
 
-            self._display_polygon(LESION_TYPE_BENIGN)
+            self._display_polygon(LESION_TYPE_UNKNOWN)
             self._enable_fit_polygon_button()
             self._enable_clear_polygon_button()
             self._enable_diameter_button()
