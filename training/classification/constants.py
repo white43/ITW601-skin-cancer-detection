@@ -24,5 +24,5 @@ INPUT_SIZES = {
     "resnet50v2": 224,
     "densenet121": 224,
     "densenet169": 224,
-    "convnexttiny": 224,
+    "convnext_tiny": 224,
 }

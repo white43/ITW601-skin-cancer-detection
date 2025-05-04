@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw
 from tkinterdnd2 import TkinterDnD, DND_FILES
 
 from training.classification.constants import CROP_SIZE
+from .barber_frame import BarberFrame
 from ..events import Events
 from ..inference import ClassificationWorker, SegmentationWorker
 from ..options import Options
@@ -92,6 +93,13 @@ class UploadFrame(ctk.CTkFrame):
         # Title: PIL and vectorbased graphics
         # Link: https://stackoverflow.com/a/45262575
         out = BytesIO()
+        cairosvg.svg2png(url=resource_path("razor-normal.svg"), write_to=out)
+        self.razor_normal = Image.open(out)
+        out = BytesIO()
+        cairosvg.svg2png(url=resource_path("razor-disabled.svg"), write_to=out)
+        self.razor_disabled = Image.open(out)
+
+        out = BytesIO()
         cairosvg.svg2png(url=resource_path("fit-polygon-normal.svg"), write_to=out)
         self.fit_img_normal = Image.open(out)
         out = BytesIO()
@@ -105,14 +113,15 @@ class UploadFrame(ctk.CTkFrame):
         cairosvg.svg2png(url=resource_path("clear-polygon-disabled.svg"), write_to=out)
         self.polygon_img_disabled = Image.open(out)
 
+        self.razor_button: Optional[ctk.CTkButton] = None
         self.image_label: Optional[ctk.CTkButton] = None
         self.find_lesion_button: Optional[ctk.CTkButton] = None
         self.predict_class_button: Optional[ctk.CTkButton] = None
         self.hint_label: Optional[ctk.CTkLabel] = None
         self.fit_polygon_button: Optional[ctk.CTkButton] = None
         self.clear_polygon_label: Optional[ctk.CTkLabel] = None
-        self.circularity_label: Optional[ctk.CTkLabel] = None
-        self.circularity_label_value: Optional[ctk.CTkLabel] = None
+        self.noncircularity_label: Optional[ctk.CTkLabel] = None
+        self.noncircularity_label_value: Optional[ctk.CTkLabel] = None
 
         # Diameter-related images, controls, and variables
         self.diameter_measure_mode: bool = False
@@ -154,6 +163,24 @@ class UploadFrame(ctk.CTkFrame):
             child.destroy()
 
     def draw_page(self) -> None:
+        self.razor_button = ctk.CTkButton(
+            master=self.master,
+            text="",
+            height=30,
+            width=30,
+            border_width=1,
+            image=ctk.CTkImage(
+                light_image=self.razor_disabled,
+                dark_image=self.razor_disabled,
+                size=(30, 30),
+            ),
+            hover=False,
+            state=ctk.DISABLED,
+            fg_color="transparent",
+            command=self._raise_razor_frame,
+        )
+        self.razor_button.place(x=31, y=100)
+
         self.image_label = ctk.CTkButton(
             master=self.master,
             text="",
@@ -265,22 +292,22 @@ class UploadFrame(ctk.CTkFrame):
         )
         self.clear_polygon_label.place(x=568, y=140)
 
-        self.circularity_label = ctk.CTkLabel(
+        self.noncircularity_label = ctk.CTkLabel(
             master=self.master,
-            text="Circularity:",
+            text="Non-circ.:",
             height=20,
             width=70,
             font=("Raleway", 14)
         )
-        self.circularity_label_value = ctk.CTkLabel(
+        self.noncircularity_label_value = ctk.CTkLabel(
             master=self.master,
             text="0.00",
             height=15,
             width=70,
             font=("Raleway", 14),
         )
-        self.circularity_label.place(x=557, y=190)
-        self.circularity_label_value.place(x=557, y=210)
+        self.noncircularity_label.place(x=557, y=190)
+        self.noncircularity_label_value.place(x=557, y=210)
 
         self.diameter_button = ctk.CTkButton(
             master=self.master,
@@ -326,6 +353,7 @@ class UploadFrame(ctk.CTkFrame):
         self._disable_fit_polygon_button()
         self._disable_clear_polygon_button()
         self._disable_diameter_button()
+        self._disable_razor_button()
 
     # User: Taku
     # Published: 27 Feb 2017
@@ -401,10 +429,10 @@ class UploadFrame(ctk.CTkFrame):
             ),
         )
 
-        self._circularity_label(noncircularity(self.polygon_vertices))
+        self._noncircularity_label(noncircularity(self.polygon_vertices))
 
-    def _circularity_label(self, c: float):
-        self.circularity_label_value.configure(text="%0.2f" % c)
+    def _noncircularity_label(self, nc: float):
+        self.noncircularity_label_value.configure(text="%0.2f" % nc)
 
     def _display_rectangle(self, malignant: int) -> None:
         img = self.segmented_image.copy()
@@ -458,7 +486,39 @@ class UploadFrame(ctk.CTkFrame):
             ),
         )
 
-        self.circularity_label_value.configure(text='0.00')
+        self.noncircularity_label_value.configure(text='0.00')
+
+    # --------------------- #
+    # RAZOR-RELATED METHODS #
+    # --------------------- #
+
+    def _enable_razor_button(self):
+        self.razor_button.configure(
+            state=ctk.NORMAL,
+            hover=True,
+            image=ctk.CTkImage(
+                light_image=self.razor_normal,
+                dark_image=self.razor_normal,
+                size=(30, 30),
+            ),
+        )
+
+    def _disable_razor_button(self):
+        self.razor_button.configure(
+            state=ctk.DISABLED,
+            hover=False,
+            image=ctk.CTkImage(
+                light_image=self.razor_disabled,
+                dark_image=self.razor_disabled,
+                size=(30, 30),
+            ),
+        )
+
+    def _raise_razor_frame(self):
+        frame = BarberFrame(self)
+        frame.set_filepath(self.original_filepath)
+        frame.set_sync_method(self.update_frame_state_from_barber_frame)
+        frame.tkraise()
 
     # ----------------------- #
     # FITTING-RELATED METHODS #
@@ -705,6 +765,13 @@ class UploadFrame(ctk.CTkFrame):
             text="",
         )
 
+        self._update_frame_state(img, filepath)
+
+
+    def update_frame_state_from_barber_frame(self, img: Image, filepath: str) -> None:
+        self._update_frame_state(img, filepath)
+
+    def _update_frame_state(self, img: Image, filepath: str):
         orig_width, orig_height = img.size
 
         # Our classification models expect images of size 224x224, so we would like to have crops of size 448x448,
@@ -729,6 +796,7 @@ class UploadFrame(ctk.CTkFrame):
                 upper_offset = (orig_height - orig_width) // 2
                 img = img.crop((0, upper_offset, orig_width, upper_offset + orig_width))
 
+        self.original_filepath = filepath
         self.original_image = img
         self.segmented_image = None
         self.lesion_bbox = []
@@ -747,6 +815,7 @@ class UploadFrame(ctk.CTkFrame):
         def _activate_buttons():
             self.find_lesion_button.configure(state=tk.NORMAL)
             self.predict_class_button.configure(state=tk.DISABLED)
+            self._enable_razor_button()
             self.hint_label.configure(text="Waiting for analysis")
 
         if self.events.models_downloaded.is_set():
