@@ -48,9 +48,9 @@ downloading = Thread(target=lambda: download_models(options, events, download_me
 downloading.start()
 
 upload_frame = UploadFrame(window, options, events, seg_tasks, seg_results, download_meter)
-barber_page = BarberFrame(window)
+# barber_page = BarberFrame(window)
 app = App(upload_frame)
-barber_page.tkraise()
+# barber_page.tkraise()
 
 
 def graceful_shutdown():
