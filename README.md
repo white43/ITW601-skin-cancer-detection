@@ -9,8 +9,10 @@
 ## How to run the app
 
 ```shell
-python -m app.main --cls-model classification-model.onnx --seg-model path-to-model.pt
+python -m app.main
 ```
+
+Trained models needed for the app will be downloaded automatically from S3 storage.
 
 ## How to package the app
 
@@ -45,7 +47,7 @@ python -m training.segmentation.download --cache isic2018-datasets --target isic
 ```
 
 Where the `cache` and `target` arguments are the directories (relative or 
-absolute) to store zipped and unzipped data, respectfully.
+absolute) to store zipped and unzipped data, respectively.
 
 ## How to evaluate trained models
 
@@ -53,11 +55,11 @@ Trained models are stored in the directory named `runs` with two subdirectories
 for classification models and segmentation. Each model has a distinct command 
 for evaluation.
 
-The following command prints a few metrics (categorical loss and mean recall) 
-to stdout: 
+The following command prints a few metrics (categorical loss, mean recall, and 
+standard deviation of mean recall) to stdout: 
 
 ```shell
-python -m training.evaluation.tf --models path/to/model1.leras path/to/model2.leras --quick
+python -m training.evaluation.tf --models path/to/model1.keras path/to/model2.keras --quick
 ```
 
 A more comprehensive approach is to use other command that evaluates roughly a 
@@ -69,7 +71,7 @@ typically localed under `isic2018-datasets` directory. A file-accumulator will
 be used to average individual results in multimodel mode.
 
 ```shell
-python -m training.evaluation.tf --models path/to/model1.leras path/to/model2.leras \
+python -m training.evaluation.tf --models path/to/model1.keras path/to/model2.keras \
     --ground-truth isic2018-datasets/ISIC2018_Task3_Test_GroundTruth.csv
     --reduce ~/Desktop/accumulator.csv
 ```
