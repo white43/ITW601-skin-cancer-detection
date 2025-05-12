@@ -600,7 +600,6 @@ class UploadFrame(ctk.CTkFrame):
 
     def _measure_lesion_diameter(self) -> float:
         mm = self._get_mm_size()
-        mm = 50
 
         if mm is None:
             return 0
@@ -619,16 +618,6 @@ class UploadFrame(ctk.CTkFrame):
         candidates = np.array(candidates)
         distances = np.sqrt((candidates[:, 0] - candidates[:, 2]) ** 2 + (candidates[:, 1] - candidates[:, 3]) ** 2)
         diameter = np.max(distances) / mm
-        longest = np.argmax(distances)
-        print(candidates[longest])
-
-        canvas = np.zeros_like(self.lesion_mask)
-        canvas = cv2.cvtColor(canvas, cv2.COLOR_GRAY2BGR)
-        cv2.drawContours(canvas, [np.array(self.polygon_vertices)], 0, (255, 0, 0), 5)
-        canvas = cv2.circle(canvas, centroid(self.polygon_vertices), shape_irregularity(self.polygon_vertices), (255, 255, 255), 10)
-        # canvas = cv2.line(canvas, (int(candidates[longest][0]), int(candidates[longest][1])), (int(candidates[longest][2]), int(candidates[longest][3])), (255, 214, 35), 10)
-        canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
-        cv2.imwrite("border.png", canvas)
 
         return diameter
 
@@ -941,10 +930,6 @@ class UploadFrame(ctk.CTkFrame):
         self.polygon_vertices = []
 
         if mask is not None:
-            i = np.bitwise_and(np.array(img.copy()), cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB))
-            i = cv2.cvtColor(i, cv2.COLOR_BGR2RGB)
-            cv2.imwrite("segment.png", i)
-
             contours, _  = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         self._display_contours_or_bbox(contours, bbox)
@@ -1122,9 +1107,6 @@ class UploadFrame(ctk.CTkFrame):
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
         groups: dict[int, list[list[tuple[int, int]]]] = {}
 
-        canvas = mask.copy()
-        canvas = cv2.cvtColor(canvas, cv2.COLOR_GRAY2RGB)
-
         for contour in contours:
             polygon: list[tuple[int, int]] = []
 
@@ -1141,8 +1123,6 @@ class UploadFrame(ctk.CTkFrame):
             if candidate[0] > c[0] and candidate[1] < c[1]:
                 if (candidate[0] - c[0]) < (c[1] - candidate[1]):
                     octant = 1
-                    cv2.fillPoly(canvas, [np.array(polygon, dtype=np.int32).reshape((-1, 1, 2))], color=(255, 214, 35), lineType=1)
-                    canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
                 else:
                     octant = 2
             elif candidate[0] > c[0] and candidate[1] > c[1]:
@@ -1153,9 +1133,6 @@ class UploadFrame(ctk.CTkFrame):
             elif candidate[0] < c[0] and candidate[1] > c[1]:
                 if (c[0] - candidate[0]) < (candidate[1] - c[1]):
                     octant = 5
-                    cv2.fillPoly(canvas, [np.array(polygon, dtype=np.int32).reshape((-1, 1, 2))], color=(255, 214, 35),
-                                 lineType=1)
-                    # canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
                 else:
                     octant = 6
             elif (c[0] - candidate[0]) > (c[1] - candidate[1]):
@@ -1167,10 +1144,6 @@ class UploadFrame(ctk.CTkFrame):
                 groups[octant] = []
 
             groups[octant].append(polygon)
-
-        # cv2.imshow("", canvas)
-        cv2.imwrite("asymmetry.png", canvas)
-        # cv2.waitKey()
 
         # Calculate asymmetry using the method (with a little modification) proposed by Sancen-Plaza et al. (2018) in
         # their work https://doi.org/10.1186/s12911-018-0641-7
