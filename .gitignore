@@ -1,9 +1,11 @@
 **/__pycache__/**
 **.onnx
 
+.idea
 build
 dist
 wandb
+logs
 
 *.keras
 *.zip
